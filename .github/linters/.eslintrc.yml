@@ -39,6 +39,7 @@ rules:
     'camelcase': 'off',
     'eslint-comments/no-use': 'off',
     'eslint-comments/no-unused-disable': 'off',
+    'github/array-foreach': 'off',
     'i18n-text/no-en': 'off',
     'import/no-namespace': 'off',
     'no-console': 'off',
@@ -74,7 +75,7 @@ rules:
     '@typescript-eslint/prefer-string-starts-ends-with': 'error',
     '@typescript-eslint/promise-function-async': 'error',
     '@typescript-eslint/require-array-sort-compare': 'error',
-    '@typescript-eslint/restrict-plus-operands': 'error',
+    '@typescript-eslint/restrict-plus-operands': 'off',
     '@typescript-eslint/space-before-function-paren': 'off',
     '@typescript-eslint/type-annotation-spacing': 'error',
     '@typescript-eslint/unbound-method': 'error'

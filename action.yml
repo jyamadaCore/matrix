@@ -1,23 +1,31 @@
-name: 'The name of your action here'
-description: 'Provide a description here'
-author: 'Your name or organization here'
+name: Automated-MAST
+description: Corellium automated MAST solution
+author: Corellium
 
-# Add your action's branding here. This will appear on the GitHub Marketplace.
-branding:
-  icon: 'heart'
-  color: 'red'
-
-# Define your inputs here.
 inputs:
-  milliseconds:
-    description: 'Your input description here'
+  server:
+    description: 'Specifies which Corellium server to use'
+    required: false
+    default: 'https://app.corellium.com'
+  flavor:
+    description: 'The flavor of the Instance that is being created'
     required: true
-    default: '1000'
+  os:
+    description: 'The software version'
+    required: true
+  appUrl:
+    description: 'URL to download test app'
+    required: true
+  inputUrl:
+    description: 'URL to download device input JSON file'
+    required: true
+  wordlistUrl:
+    description: 'URL to download wordlist txt file'
+    required: false
 
-# Define your outputs here.
 outputs:
-  time:
-    description: 'Your output description here'
+  report:
+    description: 'MAST report artifact download path'
 
 runs:
   using: node20
