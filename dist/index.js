@@ -98014,7 +98014,7 @@ async function storeReportInArtifacts(report) {
     const { downloadPath } = await artifact.downloadArtifact(id);
     core.setOutput('report', downloadPath);
 }
-async function validateInputsAndVars() {
+function validateInputsAndVars() {
     if (!process.env.API_TOKEN) {
         throw new Error('Environment secret missing: API_TOKEN');
     }

@@ -132,7 +132,7 @@ describe('action', () => {
       expect(errorMock).not.toHaveBeenCalled();
     });
 
-    it('should execute automated MAST', async () => {
+    it('should execute MATRIX', async () => {
       const workspaceDir = process.env.GITHUB_WORKSPACE as string;
       const reportArtifactPath = 'mockDownloadPath';
       const instanceId = 'mockInstanceId';
@@ -162,7 +162,7 @@ describe('action', () => {
           options.listeners.stdout(Buffer.from(JSON.stringify([{ id: wordlistId }])));
           return 0;
         })
-        // running mast
+        // running MATRIX
         .mockImplementationOnce(async (_command, _args, options: any) => {
           options.listeners.stdout(Buffer.from(JSON.stringify({ id: 'mockAssessmentId' })));
           return 0;
@@ -262,7 +262,7 @@ describe('action', () => {
         });
 
       await expect(main.pollAssessmentForStatus('mockAssessmentId', 'mockInstanceId', 'complete')).rejects.toThrow(
-        'MAST automated test failed!',
+        'MATRIX automated test failed!',
       );
       expect(execSpy.mock.calls.length).toBe(2);
     });

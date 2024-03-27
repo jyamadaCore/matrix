@@ -13,7 +13,7 @@ export async function run(): Promise<void> {
     validateInputsAndVars();
     await installCorelliumCli();
     const instanceId = await setupDevice();
-    const report = await runMast(instanceId);
+    const report = await runMatrix(instanceId);
     await cleanup(instanceId);
     await storeReportInArtifacts(report);
   } catch (error) {
@@ -48,7 +48,7 @@ async function setupDevice(): Promise<string> {
   return instanceId;
 }
 
-async function runMast(instanceId: string): Promise<string> {
+async function runMatrix(instanceId: string): Promise<string> {
   const [bundleId, wordlistId, inputInfo] = await Promise.all([
     getBundleId(instanceId),
     uploadWordlistFile(instanceId),
@@ -58,7 +58,7 @@ async function runMast(instanceId: string): Promise<string> {
   const inputsFilePath = inputInfo.inputsFilePath;
   const inputsTimeout = inputInfo.inputsTimeout;
 
-  core.info('Running MAST...');
+  core.info('Running MATRIX...');
 
   core.info('Creating assessment...');
   let assessmentId: string | undefined;
@@ -71,7 +71,7 @@ async function runMast(instanceId: string): Promise<string> {
     assessmentId = (tryJsonParse(resp) as { id: string })?.id;
     core.info(`Created assessment ${assessmentId}...`);
   } catch (err) {
-    throw new Error(`Error creating MAST assessment! err=${err}`);
+    throw new Error(`Error creating MATRIX assessment! err=${err}`);
   }
 
   await pollAssessmentForStatus(assessmentId, instanceId, 'new');
@@ -163,7 +163,7 @@ export async function pollAssessmentForStatus(
     await wait();
     actualStatus = await getAssessmentStatus();
     if (actualStatus === 'failed') {
-      throw new Error('MAST automated test failed!');
+      throw new Error('MATRIX automated test failed!');
     }
   }
 
@@ -177,9 +177,9 @@ async function storeReportInArtifacts(report: string): Promise<void> {
 
   const artifact = new DefaultArtifactClient();
 
-  const { id } = await artifact.uploadArtifact('mast-report', ['./report.html'], workspaceDir);
+  const { id } = await artifact.uploadArtifact('matrix-report', ['./report.html'], workspaceDir);
   if (!id) {
-    throw new Error('Failed to upload MAST report artifact!');
+    throw new Error('Failed to upload MATRIX report artifact!');
   }
 
   const { downloadPath } = await artifact.downloadArtifact(id);

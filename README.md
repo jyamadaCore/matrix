@@ -1,6 +1,6 @@
-# Corellium Automated MAST
+# Corellium MATRIX
 
-This action runs the Corellium automated MAST solution.
+This action runs the Corellium MATRIX solution.
 
 ### Setup
 
@@ -15,17 +15,17 @@ Create a workflow `.yml` file in your repository's `.github/workflows` directory
 
 ### Usage
 
-See [action.yml](https://github.com/corellium/automated-mast/blob/master/action.yml)
+See [action.yml](https://github.com/corellium/matrix/blob/master/action.yml)
 
 Here's an example of how to use this action in a workflow file:
 
 ```
-name: Run Corellium automated MAST solution
+name: Run Corellium MATRIX solution
 
 on: [push]
 
 jobs:
-  automated-mast:
+  corellium-matrix:
     runs-on: ubuntu-latest
 
     steps:
@@ -36,8 +36,8 @@ jobs:
       - run: npm ci
       - run: npm run bundle
 
-      - name: Run automated MAST action
-        id: automated-mast
+      - name: Run MATRIX action
+        id: corellium-matrix
         uses: ./
         env:
           PROJECT: ${{ secrets.CORELLIUM_PROJECT }}
@@ -49,7 +49,7 @@ jobs:
           appUrl: 'https://www.corellium.com/hubfs/Corellium_Cafe.ipa'
           inputUrl: 'https://www.somewebsite.com/inputs.json'
 
-      - run: echo "${{ steps.automated-mast.outputs.report }}"
+      - run: echo "${{ steps.corellium-matrix.outputs.report }}"
 
 ```
 
@@ -68,4 +68,4 @@ jobs:
 
 | Output | Description |
 | ------ | ------ |
-| `report` | MAST report artifact download path relative to the Github workspace |
+| `report` | MATRIX report artifact download path relative to the Github workspace |

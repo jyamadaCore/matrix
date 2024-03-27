@@ -1,5 +1,5 @@
-name: Automated-MAST
-description: Corellium automated MAST solution
+name: Corellium-MATRIX
+description: Corellium MATRIX solution
 author: Corellium
 
 inputs:
@@ -25,7 +25,7 @@ inputs:
 
 outputs:
   report:
-    description: 'MAST report artifact download path'
+    description: 'MATRIX report artifact download path'
 
 runs:
   using: node20
