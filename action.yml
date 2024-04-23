@@ -1,7 +1,10 @@
 name: 'Corellium MATRIX'
 description: 'Automated mobile security testing and AppSec report generation, powered by Corellium virtual devices.'
 author: 'Corellium, Inc. <support@corellium.com>'
-
+branding:
+  color: 'gray-dark'
+  icon: 'smartphone'
+  
 inputs:
   server:
     description: 'Specifies which Corellium server to use'
