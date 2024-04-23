@@ -1,6 +1,6 @@
-name: Corellium-MATRIX
-description: Corellium MATRIX solution
-author: Corellium
+name: 'Corellium MATRIX'
+description: 'Automated mobile security testing and AppSec report generation, powered by Corellium virtual devices.'
+author: 'Corellium, Inc. <support@corellium.com>'
 
 inputs:
   server:
