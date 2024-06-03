@@ -19,8 +19,8 @@ export async function run(): Promise<void> {
     validateInputsAndEnv();
     const pathTypes = await getFilePathTypes();
     await installCorelliumCli();
-    const instanceId = await setupDevice(pathTypes);
-    const report = await runMatrix(instanceId, pathTypes);
+    const { instanceId, bundleId } = await setupDevice(pathTypes);
+    const report = await runMatrix(instanceId, bundleId, pathTypes);
     await cleanup(instanceId);
     await storeReportInArtifacts(report);
   } catch (error) {
@@ -33,11 +33,11 @@ export async function run(): Promise<void> {
 
 async function installCorelliumCli(): Promise<void> {
   core.info('Installing Corellium-CLI...');
-  await exec('npm install -g @corellium/corellium-cli@1.2.7');
+  await exec('npm install -g @corellium/corellium-cli@1.3.2');
   await execCmd(`corellium login --endpoint ${core.getInput('server')} --apitoken ${process.env.API_TOKEN}`);
 }
 
-async function setupDevice(pathTypes: FilePathTypes): Promise<string> {
+async function setupDevice(pathTypes: FilePathTypes): Promise<{ instanceId: string; bundleId: string }> {
   const projectId = process.env.PROJECT;
 
   core.info('Creating device...');
@@ -52,12 +52,23 @@ async function setupDevice(pathTypes: FilePathTypes): Promise<string> {
   core.info(`Installing app on ${instanceId}...`);
   await execCmd(`corellium apps install --project ${projectId} --instance ${instanceId} --app ${appPath}`);
 
-  return instanceId;
+  const instanceStr = await execCmd(`corellium instance get --instance ${instanceId}`);
+  const instance = tryJsonParse(instanceStr) as unknown as { type: string };
+  if (instance?.type === 'ios') {
+    core.info('Unlocking device...');
+    await execCmd(`corellium instance unlock --instance ${instanceId}`);
+  }
+
+  const bundleId = await getBundleId(instanceId);
+
+  core.info(`Opening ${bundleId} on ${instanceId}...`);
+  await execCmd(`corellium apps open --project ${projectId} --instance ${instanceId} --bundle ${bundleId}`);
+
+  return { instanceId, bundleId };
 }
 
-async function runMatrix(instanceId: string, pathTypes: FilePathTypes): Promise<string> {
-  const [bundleId, wordlistId, inputInfo] = await Promise.all([
-    getBundleId(instanceId),
+async function runMatrix(instanceId: string, bundleId: string, pathTypes: FilePathTypes): Promise<string> {
+  const [wordlistId, inputInfo] = await Promise.all([
     uploadWordlistFile(instanceId, pathTypes.keywords),
     downloadInputFile(pathTypes.userActions),
   ]);
