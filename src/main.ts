@@ -22,7 +22,7 @@ export async function run(): Promise<void> {
     const { instanceId, bundleId } = await setupDevice(pathTypes);
     const report = await runMatrix(instanceId, bundleId, pathTypes);
     await cleanup(instanceId);
-    await storeReportInArtifacts(report);
+    await storeReportInArtifacts(report, bundleId);
   } catch (error) {
     // Fail the workflow run if an error occurs
     if (error instanceof Error) {
@@ -187,14 +187,14 @@ export async function pollAssessmentForStatus(
   return actualStatus;
 }
 
-async function storeReportInArtifacts(report: string): Promise<void> {
+async function storeReportInArtifacts(report: string, bundleId: string): Promise<void> {
   const workspaceDir = process.env.GITHUB_WORKSPACE as string;
   const reportPath = path.join(workspaceDir, 'report.html');
   fs.writeFileSync(reportPath, report);
 
   const artifact = new DefaultArtifactClient();
 
-  const { id } = await artifact.uploadArtifact('matrix-report', ['./report.html'], workspaceDir);
+  const { id } = await artifact.uploadArtifact(`matrix-report-${bundleId}`, ['./report.html'], workspaceDir);
   if (!id) {
     throw new Error('Failed to upload MATRIX report artifact!');
   }

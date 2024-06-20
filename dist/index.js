@@ -97883,7 +97883,7 @@ async function run() {
         const { instanceId, bundleId } = await setupDevice(pathTypes);
         const report = await runMatrix(instanceId, bundleId, pathTypes);
         await cleanup(instanceId);
-        await storeReportInArtifacts(report);
+        await storeReportInArtifacts(report, bundleId);
     }
     catch (error) {
         // Fail the workflow run if an error occurs
@@ -98016,12 +98016,12 @@ async function pollAssessmentForStatus(assessmentId, instanceId, expectedStatus)
     return actualStatus;
 }
 exports.pollAssessmentForStatus = pollAssessmentForStatus;
-async function storeReportInArtifacts(report) {
+async function storeReportInArtifacts(report, bundleId) {
     const workspaceDir = process.env.GITHUB_WORKSPACE;
     const reportPath = path.join(workspaceDir, 'report.html');
     fs_1.default.writeFileSync(reportPath, report);
     const artifact = new artifact_1.DefaultArtifactClient();
-    const { id } = await artifact.uploadArtifact('matrix-report', ['./report.html'], workspaceDir);
+    const { id } = await artifact.uploadArtifact(`matrix-report-${bundleId}`, ['./report.html'], workspaceDir);
     if (!id) {
         throw new Error('Failed to upload MATRIX report artifact!');
     }
