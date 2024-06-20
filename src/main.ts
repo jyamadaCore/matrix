@@ -191,10 +191,11 @@ async function storeReportInArtifacts(report: string, bundleId: string): Promise
   const workspaceDir = process.env.GITHUB_WORKSPACE as string;
   const reportPath = path.join(workspaceDir, 'report.html');
   fs.writeFileSync(reportPath, report);
+  const flavor = core.getInput('deviceFlavor');
 
   const artifact = new DefaultArtifactClient();
 
-  const { id } = await artifact.uploadArtifact(`matrix-report-${bundleId}`, ['./report.html'], workspaceDir);
+  const { id } = await artifact.uploadArtifact(`matrix-report-${flavor}-${bundleId}`, ['./report.html'], workspaceDir);
   if (!id) {
     throw new Error('Failed to upload MATRIX report artifact!');
   }
