@@ -97893,7 +97893,9 @@ async function run() {
             bundleId = existingBundleId;
         }
         const report = await runMatrix(instanceId, bundleId, pathTypes);
-        await cleanup(instanceId);
+        if(!existingInstance){
+            await cleanup(instanceId);
+        }
         await storeReportInArtifacts(report, bundleId);
     } catch (error) {
         // Fail the workflow run if an error occurs
