@@ -25,6 +25,12 @@ inputs:
   keywords:
     description: 'URL to download wordlist txt file or local path of the txt file relative to the Github workspace'
     required: false
+  existingInstance:
+    description: 'The instance of the existing device in your Corellium project'
+    required: false
+  bundleId:
+    description: 'The application already installed on the app'
+    required: false
 
 outputs:
   report:

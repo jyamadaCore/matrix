@@ -97880,12 +97880,19 @@ async function run() {
         validateInputsAndEnv();
         const pathTypes = await getFilePathTypes();
         await installCorelliumCli();
-        const { instanceId, bundleId } = await setupDevice(pathTypes);
+        let instanceId;
+        let bundleId;
+        if (!existingInstance) {
+            const setupResult = await setupDevice(pathTypes);
+            instanceId = setupResult.instanceId;
+            bundleId = setupResult.bundleId;
+        } else {
+            instanceId = existingInstance;
+        }
         const report = await runMatrix(instanceId, bundleId, pathTypes);
         await cleanup(instanceId);
         await storeReportInArtifacts(report, bundleId);
-    }
-    catch (error) {
+    } catch (error) {
         // Fail the workflow run if an error occurs
         if (error instanceof Error) {
             core.setFailed(error.message);
@@ -98018,11 +98025,11 @@ async function pollAssessmentForStatus(assessmentId, instanceId, expectedStatus)
 exports.pollAssessmentForStatus = pollAssessmentForStatus;
 async function storeReportInArtifacts(report, bundleId) {
     const workspaceDir = process.env.GITHUB_WORKSPACE;
-    const reportPath = path.join(workspaceDir, 'report.html');
+    const reportPath = path.join(workspaceDir, 'report.json');
     fs_1.default.writeFileSync(reportPath, report);
     const flavor = core.getInput('deviceFlavor');
     const artifact = new artifact_1.DefaultArtifactClient();
-    const { id } = await artifact.uploadArtifact(`matrix-report-${flavor}-${bundleId}`, ['./report.html'], workspaceDir);
+    const { id } = await artifact.uploadArtifact(`matrix-report-${flavor}-${bundleId}`, ['./report.json'], workspaceDir);
     if (!id) {
         throw new Error('Failed to upload MATRIX report artifact!');
     }
