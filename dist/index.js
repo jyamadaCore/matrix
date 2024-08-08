@@ -97880,6 +97880,8 @@ async function run() {
         validateInputsAndEnv();
         const pathTypes = await getFilePathTypes();
         await installCorelliumCli();
+        const existingInstance = core.getInput('existingInstance');
+        const existingBundleId = core.getInput('bundleId');
         let instanceId;
         let bundleId;
         if (!existingInstance) {
@@ -97888,6 +97890,7 @@ async function run() {
             bundleId = setupResult.bundleId;
         } else {
             instanceId = existingInstance;
+            bundleId = existingBundleId;
         }
         const report = await runMatrix(instanceId, bundleId, pathTypes);
         await cleanup(instanceId);
