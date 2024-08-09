@@ -98030,11 +98030,13 @@ async function pollAssessmentForStatus(assessmentId, instanceId, expectedStatus)
 exports.pollAssessmentForStatus = pollAssessmentForStatus;
 async function storeReportInArtifacts(report, bundleId) {
     const workspaceDir = process.env.GITHUB_WORKSPACE;
-    const reportPath = path.join(workspaceDir, 'report.json');
+    const reportFormat = core.getInput('reportFormat') || 'json';
+    const reportFileName = `report.${reportFormat}`;
+    const reportPath = path.join(workspaceDir, reportFileName);
     fs_1.default.writeFileSync(reportPath, report);
     const flavor = core.getInput('deviceFlavor');
     const artifact = new artifact_1.DefaultArtifactClient();
-    const { id } = await artifact.uploadArtifact(`matrix-report-${flavor}-${bundleId}`, ['./report.json'], workspaceDir);
+    const { id } = await artifact.uploadArtifact(`matrix-report-${flavor}-${bundleId}`, [reportPath], workspaceDir);
     if (!id) {
         throw new Error('Failed to upload MATRIX report artifact!');
     }
