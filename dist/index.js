@@ -98133,7 +98133,65 @@ function tryJsonParse(jsonStr) {
     }
     return obj;
 }
+async function createJiraIssue(summary, description) {
+    const jiraUrl = process.env.JIRA_URL;
+    const jiraEmail = process.env.JIRA_EMAIL;
+    const jiraApiToken = process.env.JIRA_API_TOKEN;
+    const jiraProjectKey = process.env.JIRA_PROJECT_KEY;
 
+    const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
+    
+    const issueData = {
+        fields: {
+            project: {
+                key: jiraProjectKey
+            },
+            summary: summary,
+            description: description,
+            issuetype: {
+                name: 'Bug'
+            }
+        }
+    };
+    try {
+        const response = await axios.post(`${jiraUrl}/rest/api/3/issue`, issueData, {
+            headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        return response.data.key;
+    } catch (error) {
+        core.error(`Failed to create Jira issue: ${error.message}`);
+        throw error;
+    }
+}
+async function processDownloadedFile(filePath) {
+    const fileContent = await fs.promises.readFile(filePath, 'utf8');
+    const parsedData = tryJsonParse(fileContent);
+
+    if (parsedData && Array.isArray(parsedData.failures)) {
+        for (const failure of parsedData.failures) {
+            const summary = `Failure: ${failure.name}`;
+            const description = failure.message || 'No description provided';
+            const issueKey = await createJiraIssue(summary, description);
+            core.info(`Created Jira issue: ${issueKey}`);
+        }
+    } else {
+        core.info('No failures found in the file.');
+    }
+}
+
+// Example usage
+(async () => {
+    try {
+        const filePathTypes = await getFilePathTypes();
+        const filePath = await downloadFile('report.json', core.getInput('appPath'), filePathTypes.appPath);
+        await processDownloadedFile(filePath);
+    } catch (error) {
+        core.setFailed(`Action failed with error: ${error.message}`);
+    }
+})();
 
 /***/ }),
 
