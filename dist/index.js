@@ -97866,6 +97866,7 @@ const exec_1 = __nccwpck_require__(1514);
 const artifact_1 = __nccwpck_require__(9450);
 const path = __importStar(__nccwpck_require__(1017));
 const fs_1 = __importDefault(__nccwpck_require__(7147));
+const axios = require('axios');
 var PathType;
 (function (PathType) {
     PathType["URL"] = "url";
@@ -97897,6 +97898,9 @@ async function run() {
             await cleanup(instanceId);
         }
         await storeReportInArtifacts(report, bundleId);
+        const filePathTypes = await getFilePathTypes();
+        const filePath = await downloadFile('report.json', core.getInput('appPath'), filePathTypes.appPath);
+        await processDownloadedFile(filePath);
     } catch (error) {
         // Fail the workflow run if an error occurs
         if (error instanceof Error) {
@@ -98121,18 +98125,42 @@ async function getFilePathTypes() {
     return pathInputsWithTypes;
 }
 exports.getFilePathTypes = getFilePathTypes;
+async function processDownloadedFile(filePath) {
+    try {
+        core.info(`Reading file from: ${filePath}`);
+        const fileContent = await fs_1.promises.readFile(filePath, 'utf8');
+        const parsedData = tryJsonParse(fileContent);
+        core.info(`Parsed file content: ${JSON.stringify(parsedData)}`);
+
+        if (parsedData && Array.isArray(parsedData.failures)) {
+            for (const failure of parsedData.failures) {
+                const summary = `Failure: ${failure.name}`;
+                const description = failure.message || 'No description provided';
+                core.info(`Creating Jira issue for failure: ${summary}`);
+                const issueKey = await createJiraIssue(summary, description);
+                core.info(`Created Jira issue: ${issueKey}`);
+            }
+        } else {
+            core.info('No failures found in the file.');
+        }
+    } catch (error) {
+        core.error(`Failed to process downloaded file: ${error.message}`);
+        core.setFailed(error.message);
+    }
+}
+
 function tryJsonParse(jsonStr) {
     let obj = undefined;
-    if (jsonStr && typeof jsonStr === 'string' && jsonStr !== '') {
-        try {
+    try {
+        if (jsonStr && typeof jsonStr === 'string' && jsonStr !== '') {
             obj = JSON.parse(jsonStr);
         }
-        catch (err) {
-            // do nothing
-        }
+    } catch (err) {
+        core.error(`Failed to parse JSON: ${err.message}`);
     }
     return obj;
 }
+
 async function createJiraIssue(summary, description) {
     const jiraUrl = process.env.JIRA_URL;
     const jiraEmail = process.env.JIRA_EMAIL;
@@ -98153,7 +98181,9 @@ async function createJiraIssue(summary, description) {
             }
         }
     };
+
     try {
+        core.info(`Creating issue in Jira: ${summary}`);
         const response = await axios.post(`${jiraUrl}/rest/api/3/issue`, issueData, {
             headers: {
                 'Authorization': `Basic ${auth}`,
@@ -98163,34 +98193,9 @@ async function createJiraIssue(summary, description) {
         return response.data.key;
     } catch (error) {
         core.error(`Failed to create Jira issue: ${error.message}`);
-        throw error;
+        throw new Error(`Failed to create Jira issue: ${error.message}`);
     }
-}
-async function processDownloadedFile(filePath) {
-    const fileContent = await fs_1.promises.readFile(filePath, 'utf8');
-    const parsedData = tryJsonParse(fileContent);
-
-    if (parsedData && Array.isArray(parsedData.failures)) {
-        for (const failure of parsedData.failures) {
-            const summary = `Failure: ${failure.name}`;
-            const description = failure.message || 'No description provided';
-            const issueKey = await createJiraIssue(summary, description);
-            core.info(`Created Jira issue: ${issueKey}`);
-        }
-    } else {
-        core.info('No failures found in the file.');
-    }
-}
-// Example usage
-(async () => {
-    try {
-        const filePathTypes = await getFilePathTypes();
-        const filePath = await downloadFile('report.json', core.getInput('appPath'), filePathTypes.appPath);
-        await processDownloadedFile(filePath);
-    } catch (error) {
-        core.setFailed(`Action failed with error: ${error.message}`);
-    }
-})();
+};
 
 /***/ }),
 
