@@ -98167,7 +98167,7 @@ async function createJiraIssue(summary, description) {
     }
 }
 async function processDownloadedFile(filePath) {
-    const fileContent = await fs.promises.readFile(filePath, 'utf8');
+    const fileContent = await fs_1.promises.readFile(filePath, 'utf8');
     const parsedData = tryJsonParse(fileContent);
 
     if (parsedData && Array.isArray(parsedData.failures)) {
@@ -98181,7 +98181,6 @@ async function processDownloadedFile(filePath) {
         core.info('No failures found in the file.');
     }
 }
-
 // Example usage
 (async () => {
     try {
