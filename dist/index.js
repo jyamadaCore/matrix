@@ -97866,7 +97866,8 @@ const exec_1 = __nccwpck_require__(1514);
 const artifact_1 = __nccwpck_require__(9450);
 const path = __importStar(__nccwpck_require__(1017));
 const fs_1 = __importDefault(__nccwpck_require__(7147));
-const axios = require('axios');
+const axios_1 = __importDefault(__nccwpck_require__(6545)); // Import Axios
+
 var PathType;
 (function (PathType) {
     PathType["URL"] = "url";
@@ -98184,7 +98185,7 @@ async function createJiraIssue(summary, description) {
 
     try {
         core.info(`Creating issue in Jira: ${summary}`);
-        const response = await axios.post(`${jiraUrl}/rest/api/3/issue`, issueData, {
+        const response = await axios_1.post(`${jiraUrl}/rest/api/3/issue`, issueData, {
             headers: {
                 'Authorization': `Basic ${auth}`,
                 'Content-Type': 'application/json'
@@ -98406,6 +98407,14 @@ module.exports = require("util");
 module.exports = require("zlib");
 
 /***/ }),
+
+/***/ 6545:
+/***/ ((module) => {
+
+    "use strict";
+    module.exports = require("axios");
+    
+    /***/ }),
 
 /***/ 1875:
 /***/ ((__unused_webpack_module, exports) => {
