@@ -12,10 +12,10 @@ inputs:
     default: 'https://app.corellium.com'
   deviceFlavor:
     description: 'The flavor of the Instance that is being created'
-    required: true
+    required: false
   deviceOS:
     description: 'The software version'
-    required: true
+    required: false
   appPath:
     description: 'URL to download test app or local path of the app relative to the Github workspace'
     required: true
@@ -24,6 +24,15 @@ inputs:
     required: true
   keywords:
     description: 'URL to download wordlist txt file or local path of the txt file relative to the Github workspace'
+    required: false
+  existingInstance:
+    description: 'The instance of the existing device in your Corellium project'
+    required: false
+  bundleId:
+    description: 'The application already installed on the app'
+    required: false
+  reportFormat:
+    description: 'This controls the format of the report output, it will default to JSON'
     required: false
 
 outputs:
