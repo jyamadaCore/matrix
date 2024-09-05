@@ -16,7 +16,7 @@ jest.mock('fs', () => {
   return {
     ...actual,
     promises: {
-      stat: jest.fn().mockImplementation(async (path) => {
+      stat: jest.fn().mockImplementation(async path => {
         if (path.includes('invalid')) throw new Error('Invalid path');
         return { isFile: () => true }; // Mocking correct fs.stat response
       }),
@@ -149,7 +149,7 @@ describe('action', () => {
       expect(runMock).toHaveReturned();
       expect(setFailedMock).toHaveBeenCalledWith('Environment secret missing: API_TOKEN');
     });
-    
+
     it(`should throw an error if 'appPath' input is missing`, async () => {
       process.env.PROJECT = 'mockProjectId';
       process.env.API_TOKEN = 'mockApiToken';
@@ -206,7 +206,7 @@ describe('action', () => {
     it('should execute MATRIX on android device', async () => {
       const workspaceDir = process.env.GITHUB_WORKSPACE as string;
       const bundleId = 'com.android.egg';
-      
+
       getInputMock.mockImplementation(input => {
         if (input === 'appPath') {
           return mockUrl;
@@ -219,64 +219,74 @@ describe('action', () => {
         }
         return 'mockVal';
       });
-      
+
       (promises.stat as jest.Mock).mockImplementation(async () => Promise.resolve(true));
-    
+
       const execSpy = jest.spyOn(exec, 'exec');
       execSpy
         .mockImplementationOnce(async () => Promise.resolve(0)) // install corellium-cli
         .mockImplementationOnce(async () => Promise.resolve(0)) // log into cli
-        .mockImplementationOnce(async (_command, _args, options: any) => { // create instance
+        .mockImplementationOnce(async (_command, _args, options: any) => {
+          // create instance
           options.listeners.stdout(Buffer.from(instanceId));
           return 0;
         })
         .mockImplementationOnce(async () => Promise.resolve(0)) // download app
         .mockImplementationOnce(async () => Promise.resolve(0)) // install app
-        .mockImplementationOnce(async (_command, _args, options: any) => { // get instance
+        .mockImplementationOnce(async (_command, _args, options: any) => {
+          // get instance
           options.listeners.stdout(Buffer.from(JSON.stringify({ type: 'android' })));
           return 0;
         })
-        .mockImplementationOnce(async (_command, _args, options: any) => { // getBundleId
+        .mockImplementationOnce(async (_command, _args, options: any) => {
+          // getBundleId
           options.listeners.stdout(Buffer.from(JSON.stringify([{ applicationType: 'User', bundleID: bundleId }])));
           return 0;
         })
         .mockImplementationOnce(async () => Promise.resolve(0)) // open app
-        .mockImplementationOnce(async (_command, _args, options: any) => { // uploadWordlistFile
+        .mockImplementationOnce(async (_command, _args, options: any) => {
+          // uploadWordlistFile
           options.listeners.stdout(Buffer.from(JSON.stringify([{ id: wordlistId }])));
           return 0;
         })
-        .mockImplementationOnce(async (_command, _args, options: any) => { // running MATRIX
+        .mockImplementationOnce(async (_command, _args, options: any) => {
+          // running MATRIX
           options.listeners.stdout(Buffer.from(JSON.stringify({ id: 'mockAssessmentId' })));
           return 0;
         })
-        .mockImplementationOnce(async (_command, _args, options: any) => { // get assessment status
+        .mockImplementationOnce(async (_command, _args, options: any) => {
+          // get assessment status
           options.listeners.stdout(Buffer.from(JSON.stringify({ status: 'new' })));
           return 0;
         })
         .mockImplementationOnce(async () => Promise.resolve(0)) // start monitor
-        .mockImplementationOnce(async (_command, _args, options: any) => { // get assessment status
+        .mockImplementationOnce(async (_command, _args, options: any) => {
+          // get assessment status
           options.listeners.stdout(Buffer.from(JSON.stringify({ status: 'monitoring' })));
           return 0;
         })
         .mockImplementationOnce(async () => Promise.resolve(0)) // execute inputs
         .mockImplementationOnce(async () => Promise.resolve(0)) // stop monitor
-        .mockImplementationOnce(async (_command, _args, options: any) => { // get assessment status
+        .mockImplementationOnce(async (_command, _args, options: any) => {
+          // get assessment status
           options.listeners.stdout(Buffer.from(JSON.stringify({ status: 'readyForTesting' })));
           return 0;
         })
         .mockImplementationOnce(async () => Promise.resolve(0)) // execute tests
-        .mockImplementationOnce(async (_command, _args, options: any) => { // get assessment status
+        .mockImplementationOnce(async (_command, _args, options: any) => {
+          // get assessment status
           options.listeners.stdout(Buffer.from(JSON.stringify({ status: 'complete' })));
           return 0;
         })
-        .mockImplementationOnce(async (_command, _args, options: any) => { // download assessment
+        .mockImplementationOnce(async (_command, _args, options: any) => {
+          // download assessment
           options.listeners.stdout(Buffer.from('mastReport'));
           return 0;
         })
         .mockImplementationOnce(async () => Promise.resolve(0)) // cleanup: stop instance
         .mockImplementationOnce(async () => Promise.resolve(0)) // cleanup: delete instance
         .mockImplementationOnce(async () => Promise.resolve(0)); // logout
-    
+
       // Mock DefaultArtifactClient's methods
       const uploadArtifactMock = jest
         .spyOn(artifact.DefaultArtifactClient.prototype, 'uploadArtifact')
@@ -284,12 +294,12 @@ describe('action', () => {
       const downloadArtifactMock = jest
         .spyOn(artifact.DefaultArtifactClient.prototype, 'downloadArtifact')
         .mockImplementation(async () => Promise.resolve({ downloadPath: reportArtifactPath }));
-    
+
       // Run the main function
       await main.run();
-      expect(runMock).toHaveReturned();å
-    
+      expect(runMock).toHaveReturned();
+
       console.log('Execution flow reached setOutput'); // Debugging line
-    }, 15000);    
+    }, 15000);
   });
 });
