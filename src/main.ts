@@ -231,7 +231,7 @@ async function runMatrix(
       core.info(`App not installed. Installing the app...`);
       const appPath = await downloadFile('appFile', core.getInput('appPath'), pathTypes.appPath);
       await execCmd(`corellium apps install --project ${projectId} --instance ${instanceId} --app ${appPath}`);
-      const waitTime = 120000;
+      const waitTime = 140000;
       core.info(`Waiting ${waitTime}ms before retrying to open the app...`);
       await wait(waitTime);
       core.info('Retrying to open the app...');
