@@ -28,6 +28,32 @@ interface AssessmentStatus {
     status: string;
 }
 
+export async function getFilePathTypes(): Promise<Record<string, PathType>> {
+    const pathInputs = ['appPath', 'userActions', 'keywords'];
+    const workspaceDir = process.env.GITHUB_WORKSPACE as string;
+    const pathInputsWithTypes: Record<string, PathType> = {};
+
+    for (const pathInput of pathInputs) {
+        const filePath = core.getInput(pathInput);
+        if (filePath) {
+            try {
+                new URL(filePath);
+                pathInputsWithTypes[pathInput] = PathType.URL;
+                continue;
+            } catch (_) {
+                const fullPath = `${workspaceDir}${filePath.startsWith('/') ? filePath : `/${filePath}`}`;
+                if (await fs.promises.stat(fullPath).catch(() => false)) {
+                    pathInputsWithTypes[pathInput] = PathType.RELATIVE;
+                    continue;
+                }
+                throw new Error(`Provided file path is invalid: ${pathInput}`);
+            }
+        }
+    }
+
+    return pathInputsWithTypes;
+}
+
 export async function run(): Promise<void> {
     try {
         validateInputsAndEnv();
@@ -60,6 +86,7 @@ export async function run(): Promise<void> {
         }
     }
 }
+
 
 async function installCorelliumCli(): Promise<void> {
     core.info('Installing Corellium-CLI...');
@@ -155,7 +182,7 @@ async function setupDevice(pathTypes: Record<string, PathType>): Promise<SetupRe
     core.info(`Installing app on ${instanceId}...`);
     await execCmd(`corellium apps install --project ${projectId} --instance ${instanceId} --app ${appPath}`);
     const instanceStr = await execCmd(`corellium instance get --instance ${instanceId}`);
-    const instance = tryJsonParse(instanceStr);
+    const instance = tryJsonParse<Record<string, any>>(instanceStr);
 
     if (instance?.type === 'ios') {
         core.info('Unlocking device...');
@@ -179,7 +206,7 @@ async function runMatrix(projectId: string, instanceId: string, bundleId: string
 
     core.info('Running MATRIX...');
     const instanceStr = await execCmd(`corellium instance get --instance ${instanceId}`);
-    const instance = tryJsonParse(instanceStr);
+    const instance = tryJsonParse<Record<string, any>>(instanceStr);
 
     if (instance?.type === 'ios') {
         core.info('Unlocking device...');
@@ -212,7 +239,11 @@ async function runMatrix(projectId: string, instanceId: string, bundleId: string
             createAssessment += ` --wordlist ${wordlistId}`;
         }
         const resp = await execCmd(createAssessment);
-        assessmentId = tryJsonParse(resp)?.id;
+        const parsedResponse = tryJsonParse<{ id: string }>(resp);
+        if (!parsedResponse || !parsedResponse.id) {
+            throw new Error('Assessment ID is missing from the response');
+        }
+        assessmentId = parsedResponse.id;
         core.info(`Created assessment ${assessmentId}...`);
     } catch (err) {
         throw new Error(`Error creating MATRIX assessment! err=${err}`);
@@ -245,8 +276,8 @@ async function cleanup(instanceId: string): Promise<void> {
 
 async function getBundleId(instanceId: string): Promise<string> {
     const resp = await execCmd(`corellium apps --project ${process.env.PROJECT} --instance ${instanceId}`);
-    const appList = tryJsonParse(resp);
-    const bundleId = appList?.find((app: { applicationType: string }) => app.applicationType === 'User')?.bundleID;
+    const appList = tryJsonParse<{ applicationType: string; bundleID: string }[]>(resp);
+    const bundleId = appList?.find((app) => app.applicationType === 'User')?.bundleID;
     if (!bundleId) {
         throw new Error('Error getting bundleId!');
     }
@@ -261,7 +292,7 @@ async function uploadWordlistFile(instanceId: string, pathType: PathType): Promi
     core.info('Uploading wordlist...');
     const wordlistPath = await downloadFile('wordlist.txt', keywords, pathType);
     const resp = await execCmd(`corellium image create --project ${process.env.PROJECT} --instance ${instanceId} --format json wordlist.txt mast-wordlist plain ${wordlistPath}`);
-    const uploadedWordlistResp = tryJsonParse(resp);
+    const uploadedWordlistResp = tryJsonParse<{ id: string }[]>(resp);
     const wordlistId = uploadedWordlistResp?.[0].id;
     core.info(`Uploaded wordlist: ${wordlistId}`);
     return wordlistId;
@@ -282,10 +313,14 @@ async function downloadInputFile(pathType: PathType): Promise<InputInfo> {
     return { inputsFilePath, inputsTimeout };
 }
 
-async function pollAssessmentForStatus(assessmentId: string, instanceId: string, expectedStatus: string): Promise<string> {
+export async function pollAssessmentForStatus(assessmentId: string, instanceId: string, expectedStatus: string): Promise<string> {
     const getAssessmentStatus = async (): Promise<string> => {
         const resp = await execCmd(`corellium matrix get-assessment --instance ${instanceId} --assessment ${assessmentId}`);
-        return tryJsonParse(resp)?.status;
+        const parsedStatus = tryJsonParse<{ status: string }>(resp);
+        if (!parsedStatus || !parsedStatus.status) {
+            throw new Error('Status is missing from the response');
+        }
+        return parsedStatus.status;
     };
 
     let actualStatus = await getAssessmentStatus();
@@ -367,36 +402,10 @@ async function execCmd(cmd: string): Promise<string> {
     return resp;
 }
 
-async function getFilePathTypes(): Promise<Record<string, PathType>> {
-    const pathInputs = ['appPath', 'userActions', 'keywords'];
-    const workspaceDir = process.env.GITHUB_WORKSPACE as string;
-    const pathInputsWithTypes: Record<string, PathType> = {};
-
-    for (const pathInput of pathInputs) {
-        const filePath = core.getInput(pathInput);
-        if (filePath) {
-            try {
-                new URL(filePath);
-                pathInputsWithTypes[pathInput] = PathType.URL;
-                continue;
-            } catch (_) {
-                const fullPath = `${workspaceDir}${filePath.startsWith('/') ? filePath : `/${filePath}`}`;
-                if (await fs.promises.stat(fullPath).catch(() => false)) {
-                    pathInputsWithTypes[pathInput] = PathType.RELATIVE;
-                    continue;
-                }
-                throw new Error(`Provided file path is invalid: ${pathInput}`);
-            }
-        }
-    }
-
-    return pathInputsWithTypes;
-}
-
-function tryJsonParse(jsonStr: string): any {
-    try {
-        return JSON.parse(jsonStr);
-    } catch {
-        return undefined;
-    }
+function tryJsonParse<T>(jsonStr: string): T | undefined {
+  try {
+    return JSON.parse(jsonStr) as T;
+  } catch {
+    return undefined;
+  }
 }
