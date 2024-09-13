@@ -355,10 +355,11 @@ async function storeReportInArtifacts(report: string, bundleId: string): Promise
   const reportFormat = core.getInput('reportFormat') || 'json';
   const reportFileName = `report.${reportFormat}`;
   const reportPath = path.join(workspaceDir, reportFileName);
+  const dateTime = Date.now()
   fs.writeFileSync(reportPath, report);
   const flavor = core.getInput('deviceFlavor');
   const artifact = new DefaultArtifactClient();
-  const { id } = await artifact.uploadArtifact(`matrix-report-${flavor}-${bundleId}`, [reportPath], workspaceDir);
+  const { id } = await artifact.uploadArtifact(`matrix-report-${flavor}-${bundleId}-${dateTime}`, [reportPath], workspaceDir);
   if (!id) {
     throw new Error('Failed to upload MATRIX report artifact!');
   }
