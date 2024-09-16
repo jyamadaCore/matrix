@@ -61,6 +61,7 @@ export async function run(): Promise<void> {
     await installCorelliumCli();
     const existingInstance = core.getInput('existingInstance');
     const existingBundleId = core.getInput('bundleId');
+    const reportFormat = core.getInput('reportFormat')
     const projectId = process.env.PROJECT as string;
     let instanceId: string;
     let bundleId: string;
@@ -75,7 +76,7 @@ export async function run(): Promise<void> {
       bundleId = existingBundleId;
     }
 
-    const report = await runMatrix(projectId, instanceId, bundleId, pathTypes);
+    const report = await runMatrix(projectId, instanceId, bundleId, reportFormat, pathTypes);
     if (!existingInstance) {
       await cleanup(instanceId);
     }
@@ -204,6 +205,7 @@ async function runMatrix(
   projectId: string,
   instanceId: string,
   bundleId: string,
+  reportFormat: string,
   pathTypes: Record<string, PathType>,
 ): Promise<string> {
   const [wordlistId, inputInfo] = await Promise.all([
@@ -274,7 +276,7 @@ async function runMatrix(
   await execCmd(`corellium matrix test --instance ${instanceId} --assessment ${assessmentId}`);
   await pollAssessmentForStatus(assessmentId, instanceId, 'complete');
   core.info('Downloading assessment...');
-  return await execCmd(`corellium matrix download-report --instance ${instanceId} --assessment ${assessmentId}`);
+  return await execCmd(`corellium matrix download-report --instance ${instanceId} --assessment ${assessmentId} --format ${reportFormat}`);
 }
 
 async function cleanup(instanceId: string): Promise<void> {
