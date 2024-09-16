@@ -61,7 +61,7 @@ export async function run(): Promise<void> {
     await installCorelliumCli();
     const existingInstance = core.getInput('existingInstance');
     const existingBundleId = core.getInput('bundleId');
-    const reportFormat = core.getInput('reportFormat')
+    const reportFormat = core.getInput('reportFormat');
     const projectId = process.env.PROJECT as string;
     let instanceId: string;
     let bundleId: string;
@@ -276,7 +276,9 @@ async function runMatrix(
   await execCmd(`corellium matrix test --instance ${instanceId} --assessment ${assessmentId}`);
   await pollAssessmentForStatus(assessmentId, instanceId, 'complete');
   core.info('Downloading assessment...');
-  return await execCmd(`corellium matrix download-report --instance ${instanceId} --assessment ${assessmentId} --format ${reportFormat}`);
+  return await execCmd(
+    `corellium matrix download-report --instance ${instanceId} --assessment ${assessmentId} --format ${reportFormat}`,
+  );
 }
 
 async function cleanup(instanceId: string): Promise<void> {
