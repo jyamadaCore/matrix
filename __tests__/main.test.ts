@@ -375,7 +375,7 @@ describe('action', () => {
         if (name === 'deviceId') return ''; // Ensure 'deviceId' is not set
         return 'mockVal';
       });
-    
+
       await main.run();
 
       /** Expect 'setFailed' to have been called with the specific error message. */
@@ -383,7 +383,7 @@ describe('action', () => {
       /** Expect 'error' not to have been called. */
       expect(errorMock).not.toHaveBeenCalled();
     });
-    
+
     it(`should throw an error if 'deviceOS' input is missing`, async () => {
       /**
        * Mock 'getInput' to simulate missing 'deviceOS' and 'deviceId'.
@@ -393,7 +393,7 @@ describe('action', () => {
         if (name === 'deviceId') return ''; // Ensure 'deviceId' is not set
         return 'mockVal';
       });
-    
+
       await main.run();
 
       /** Expect 'setFailed' to have been called with the specific error message. */
