@@ -26,16 +26,12 @@ interface InputInfo {
   inputsTimeout: number;
 }
 
-interface AssessmentStatus {
-  status: string;
-}
-
 export async function run(): Promise<void> {
   try {
     validateInputsAndEnv();
     const pathTypes = await getFilePathTypes();
     await installCorelliumCli(); // Now includes login
-    const existingInstance = core.getInput('existingInstance');
+    const deviceId = core.getInput('deviceId');
     const existingBundleId = core.getInput('bundleId');
     const reportFormat = core.getInput('reportFormat') || 'json';
     const projectId = process.env.PROJECT as string;
@@ -43,12 +39,12 @@ export async function run(): Promise<void> {
     let bundleId: string;
 
     // Call setupDevice in both cases
-    const setupResult = await setupDevice(pathTypes, existingInstance, existingBundleId);
+    const setupResult = await setupDevice(pathTypes, deviceId, existingBundleId);
     instanceId = setupResult.instanceId;
     bundleId = setupResult.bundleId;
 
     const report = await runMatrix(projectId, instanceId, bundleId, reportFormat, pathTypes);
-    if (!existingInstance) {
+    if (!deviceId) {
       await cleanup(instanceId);
     } else {
       // Logout if using existing instance
@@ -65,7 +61,7 @@ export async function run(): Promise<void> {
 async function installCorelliumCli(): Promise<void> {
   core.info('Installing Corellium-CLI...');
   try {
-    await execCmd('npm install -g @corellium/corellium-cli@1.3.2');
+    await execCmd('npm install -g @corellium/corellium-cli@latest');
     core.info('Logging into Corellium...');
     await execCmd(`corellium login --endpoint ${core.getInput('server')} --apitoken ${process.env.API_TOKEN}`);
   } catch (error) {
@@ -80,25 +76,17 @@ async function installCorelliumCli(): Promise<void> {
 }
 
 async function instanceCheck(instanceId: string): Promise<void> {
-  // Removed 'corellium login' from here
   core.info(`Checking status of instance with ID: ${instanceId}...`);
-  let instanceDetails = await getInstanceStatus(instanceId);
+  const instanceDetails = await getInstanceStatus(instanceId);
 
   if (instanceDetails.state !== 'on') {
-    core.info(
-      `Instance is not ready. Current status: ${instanceDetails.state}, Agent status: ${instanceDetails.ready}`,
-    );
+    core.info(`Instance is not ready. Current status: ${instanceDetails.state}, Agent status: Not ready`);
     core.info('Starting instance...');
-    await execCmd(`corellium instance start ${instanceId}`);
+    await execCmd(`corellium instance start ${instanceId} --wait`);
   }
 
   core.info('Waiting for instance to be ready...');
-  instanceDetails = await pollInstanceStatus(instanceId);
-  if (instanceDetails.ready) {
-    core.info('Instance is now ready.');
-  } else {
-    throw new Error('Instance did not reach ready status.');
-  }
+  await waitForInstanceReady(instanceId);
 }
 
 async function getInstanceStatus(instanceId: string): Promise<InstanceDetails> {
@@ -112,21 +100,27 @@ async function getInstanceStatus(instanceId: string): Promise<InstanceDetails> {
   }
 }
 
-async function pollInstanceStatus(instanceId: string): Promise<InstanceDetails> {
-  const pollInterval = 30000;
+async function waitForInstanceReady(instanceId: string): Promise<void> {
+  const pollInterval = 30000; // 30 seconds
   const maxRetries = 60;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const instanceDetails = await getInstanceReady(instanceId);
+      const projectId = process.env.PROJECT as string;
+      const apiOutput = await execCmd(`corellium instance ready --project ${projectId} --instance ${instanceId}`);
+      const instanceDetails = JSON.parse(apiOutput) as InstanceDetails;
+
       if (instanceDetails.ready) {
-        return instanceDetails;
+        core.info('Instance is now ready.');
+        return;
       }
+
       core.info(`Instance not ready yet. Retrying in ${pollInterval / 1000} seconds...`);
       await wait(pollInterval);
     } catch (error) {
       if (error instanceof Error && error.message.includes('Agent not yet available')) {
-        continue;
+        core.info(`Agent not yet available. Retrying in ${pollInterval / 1000} seconds...`);
+        await wait(pollInterval);
       } else {
         core.error(`Error during polling: ${error instanceof Error ? error.message : 'Unknown error'}`);
         throw error;
@@ -136,22 +130,9 @@ async function pollInstanceStatus(instanceId: string): Promise<InstanceDetails> 
   throw new Error('Timed out waiting for instance to be ready.');
 }
 
-async function getInstanceReady(instanceId: string): Promise<InstanceDetails> {
-  try {
-    const projectId = process.env.PROJECT as string;
-    const apiOutput = await execCmd(`corellium instance ready --project ${projectId} --instance ${instanceId}`);
-    return JSON.parse(apiOutput);
-  } catch (error) {
-    if (error instanceof Error && !error.message.includes('Agent not yet available')) {
-      core.error(`Error fetching readiness status: ${error.message}`);
-    }
-    throw error;
-  }
-}
-
 async function setupDevice(
   pathTypes: FilePathTypes,
-  existingInstance?: string,
+  deviceId?: string,
   existingBundleId?: string,
 ): Promise<SetupResult> {
   const projectId = process.env.PROJECT as string;
@@ -160,9 +141,9 @@ async function setupDevice(
 
   // Removed 'corellium login' from here
 
-  if (existingInstance) {
+  if (deviceId) {
     // Use existing instance
-    instanceId = existingInstance;
+    instanceId = deviceId;
     await instanceCheck(instanceId);
   } else {
     // Create new device
@@ -294,6 +275,7 @@ async function uploadWordlistFile(
   return wordlistId;
 }
 
+// estimating time it takes to execute device inputs - has 10s buffer
 async function downloadInputFile(pathValue: string, pathType: PathType): Promise<InputInfo> {
   const inputsFilePath = await downloadFile('inputs.json', pathValue, pathType);
   const inputsJson = JSON.parse(readFileSync(inputsFilePath, 'utf-8'));
@@ -362,9 +344,11 @@ function validateInputsAndEnv(): void {
   if (!process.env.PROJECT) {
     throw new Error('Environment secret missing: PROJECT');
   }
+
+  // inputs from action file are not validated https://github.com/actions/runner/issues/1070
   const requiredInputs = ['appPath', 'userActions'];
-  const existingInstance = core.getInput('existingInstance');
-  if (!existingInstance) {
+  const deviceId = core.getInput('deviceId');
+  if (!deviceId) {
     requiredInputs.push('deviceFlavor', 'deviceOS');
   }
   requiredInputs.forEach(input => {
@@ -391,6 +375,7 @@ async function wait(ms = 3000): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// these can be either URLs or file relative to the github workspace
 export async function getFilePathTypes(): Promise<FilePathTypes> {
   const pathInputs = ['appPath', 'userActions', 'keywords'];
   const workspaceDir = process.env.GITHUB_WORKSPACE as string;
