@@ -1,13 +1,15 @@
 import * as core from '@actions/core';
 import { exec } from '@actions/exec';
-import * as fs from 'fs';
+import { readFileSync, writeFileSync, promises } from 'fs';
 import * as path from 'path';
 import { DefaultArtifactClient } from '@actions/artifact';
 
 enum PathType {
-  URL = 'URL',
-  RELATIVE = 'RELATIVE',
+  URL = 'url',
+  RELATIVE = 'relative',
 }
+
+type FilePathTypes = Record<string, PathType>;
 
 interface InstanceDetails {
   state: string;
@@ -28,57 +30,29 @@ interface AssessmentStatus {
   status: string;
 }
 
-export async function getFilePathTypes(): Promise<Record<string, PathType>> {
-  const pathInputs = ['appPath', 'userActions', 'keywords'];
-  const workspaceDir = process.env.GITHUB_WORKSPACE as string;
-  const pathInputsWithTypes: Record<string, PathType> = {};
-
-  for (const pathInput of pathInputs) {
-    const filePath = core.getInput(pathInput);
-    if (filePath) {
-      try {
-        new URL(filePath);
-        pathInputsWithTypes[pathInput] = PathType.URL;
-        continue;
-      } catch (_) {
-        const fullPath = `${workspaceDir}${filePath.startsWith('/') ? filePath : `/${filePath}`}`;
-        if (await fs.promises.stat(fullPath).catch(() => false)) {
-          pathInputsWithTypes[pathInput] = PathType.RELATIVE;
-          continue;
-        }
-        throw new Error(`Provided file path is invalid: ${pathInput}`);
-      }
-    }
-  }
-
-  return pathInputsWithTypes;
-}
-
 export async function run(): Promise<void> {
   try {
     validateInputsAndEnv();
     const pathTypes = await getFilePathTypes();
-    await installCorelliumCli();
+    await installCorelliumCli(); // Now includes login
     const existingInstance = core.getInput('existingInstance');
     const existingBundleId = core.getInput('bundleId');
-    const reportFormat = core.getInput('reportFormat');
+    const reportFormat = core.getInput('reportFormat') || 'json';
     const projectId = process.env.PROJECT as string;
     let instanceId: string;
     let bundleId: string;
 
-    if (!existingInstance) {
-      const setupResult = await setupDevice(pathTypes);
-      instanceId = setupResult.instanceId;
-      bundleId = setupResult.bundleId;
-    } else {
-      await instanceCheck(existingInstance);
-      instanceId = existingInstance;
-      bundleId = existingBundleId;
-    }
+    // Call setupDevice in both cases
+    const setupResult = await setupDevice(pathTypes, existingInstance, existingBundleId);
+    instanceId = setupResult.instanceId;
+    bundleId = setupResult.bundleId;
 
     const report = await runMatrix(projectId, instanceId, bundleId, reportFormat, pathTypes);
     if (!existingInstance) {
       await cleanup(instanceId);
+    } else {
+      // Logout if using existing instance
+      await execCmd(`corellium logout`);
     }
     await storeReportInArtifacts(report, bundleId);
   } catch (error) {
@@ -92,20 +66,21 @@ async function installCorelliumCli(): Promise<void> {
   core.info('Installing Corellium-CLI...');
   try {
     await execCmd('npm install -g @corellium/corellium-cli@1.3.2');
+    core.info('Logging into Corellium...');
+    await execCmd(`corellium login --endpoint ${core.getInput('server')} --apitoken ${process.env.API_TOKEN}`);
   } catch (error) {
     if (error instanceof Error && error.message.includes('deprecated uuid')) {
       core.warning('UUID deprecation warning encountered, but continuing as it is non-critical.');
     } else {
       throw new Error(
-        `Error occurred executing npm install: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `Error occurred during installation or login: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
   }
 }
 
 async function instanceCheck(instanceId: string): Promise<void> {
-  core.info('Connecting to Corellium...');
-  await execCmd(`corellium login --endpoint ${core.getInput('server')} --apitoken ${process.env.API_TOKEN}`);
+  // Removed 'corellium login' from here
   core.info(`Checking status of instance with ID: ${instanceId}...`);
   let instanceDetails = await getInstanceStatus(instanceId);
 
@@ -148,7 +123,7 @@ async function pollInstanceStatus(instanceId: string): Promise<InstanceDetails> 
         return instanceDetails;
       }
       core.info(`Instance not ready yet. Retrying in ${pollInterval / 1000} seconds...`);
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
+      await wait(pollInterval);
     } catch (error) {
       if (error instanceof Error && error.message.includes('Agent not yet available')) {
         continue;
@@ -174,19 +149,37 @@ async function getInstanceReady(instanceId: string): Promise<InstanceDetails> {
   }
 }
 
-async function setupDevice(pathTypes: Record<string, PathType>): Promise<SetupResult> {
+async function setupDevice(
+  pathTypes: FilePathTypes,
+  existingInstance?: string,
+  existingBundleId?: string,
+): Promise<SetupResult> {
   const projectId = process.env.PROJECT as string;
-  core.info('Connecting to Corellium...');
-  await execCmd(`corellium login --endpoint ${core.getInput('server')} --apitoken ${process.env.API_TOKEN}`);
-  core.info('Creating device...');
-  const resp = await execCmd(
-    `corellium instance create ${core.getInput('deviceFlavor')} ${core.getInput('deviceOS')} ${projectId} --wait`,
-  );
-  const instanceId = resp.toString().trim();
+  let instanceId: string;
+  let bundleId: string;
+
+  // Removed 'corellium login' from here
+
+  if (existingInstance) {
+    // Use existing instance
+    instanceId = existingInstance;
+    await instanceCheck(instanceId);
+  } else {
+    // Create new device
+    core.info('Creating device...');
+    const resp = await execCmd(
+      `corellium instance create ${core.getInput('deviceFlavor')} ${core.getInput('deviceOS')} ${projectId} --wait`,
+    );
+    instanceId = resp.toString().trim();
+  }
+
+  // Install app
   core.info('Downloading app...');
   const appPath = await downloadFile('appFile', core.getInput('appPath'), pathTypes.appPath);
   core.info(`Installing app on ${instanceId}...`);
   await execCmd(`corellium apps install --project ${projectId} --instance ${instanceId} --app ${appPath}`);
+
+  // Unlock device if necessary
   const instanceStr = await execCmd(`corellium instance get --instance ${instanceId}`);
   const instance = tryJsonParse<Record<string, any>>(instanceStr);
 
@@ -195,9 +188,16 @@ async function setupDevice(pathTypes: Record<string, PathType>): Promise<SetupRe
     await execCmd(`corellium instance unlock --instance ${instanceId}`);
   }
 
-  const bundleId = await getBundleId(instanceId);
+  // Get bundleId
+  if (existingBundleId) {
+    bundleId = existingBundleId;
+  } else {
+    bundleId = await getBundleId(instanceId);
+  }
+
   core.info(`Opening ${bundleId} on ${instanceId}...`);
   await execCmd(`corellium apps open --project ${projectId} --instance ${instanceId} --bundle ${bundleId}`);
+
   return { instanceId, bundleId };
 }
 
@@ -206,42 +206,19 @@ async function runMatrix(
   instanceId: string,
   bundleId: string,
   reportFormat: string,
-  pathTypes: Record<string, PathType>,
+  pathTypes: FilePathTypes,
 ): Promise<string> {
   const [wordlistId, inputInfo] = await Promise.all([
-    uploadWordlistFile(instanceId, pathTypes.keywords),
-    downloadInputFile(pathTypes.userActions),
+    uploadWordlistFile(instanceId, core.getInput('keywords'), pathTypes.keywords),
+    downloadInputFile(core.getInput('userActions'), pathTypes.userActions),
   ]);
-
+  
   const inputsFilePath = inputInfo.inputsFilePath;
   const inputsTimeout = inputInfo.inputsTimeout;
 
   core.info('Running MATRIX...');
-  const instanceStr = await execCmd(`corellium instance get --instance ${instanceId}`);
-  const instance = tryJsonParse<Record<string, any>>(instanceStr);
 
-  if (instance?.type === 'ios') {
-    core.info('Unlocking device...');
-    await execCmd(`corellium instance unlock --instance ${instanceId}`);
-  }
-
-  core.info(`Opening ${bundleId} on ${instanceId}...`);
-  try {
-    await execCmd(`corellium apps open --project ${projectId} --instance ${instanceId} --bundle ${bundleId}`);
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('App not installed')) {
-      core.info(`App not installed. Installing the app...`);
-      const appPath = await downloadFile('appFile', core.getInput('appPath'), pathTypes.appPath);
-      await execCmd(`corellium apps install --project ${projectId} --instance ${instanceId} --app ${appPath}`);
-      const waitTime = 140000;
-      core.info(`Waiting ${waitTime}ms before retrying to open the app...`);
-      await wait(waitTime);
-      core.info('Retrying to open the app...');
-      await execCmd(`corellium apps open --project ${projectId} --instance ${instanceId} --bundle ${bundleId}`);
-    } else {
-      throw error;
-    }
-  }
+  // The device should already be unlocked and the app opened in setupDevice
 
   core.info('Creating assessment...');
   let assessmentId: string;
@@ -298,13 +275,16 @@ async function getBundleId(instanceId: string): Promise<string> {
   return bundleId;
 }
 
-async function uploadWordlistFile(instanceId: string, pathType: PathType): Promise<string | undefined> {
-  const keywords = core.getInput('keywords');
-  if (!keywords) {
+async function uploadWordlistFile(
+  instanceId: string,
+  pathValue?: string,
+  pathType?: PathType,
+): Promise<string | undefined> {
+  if (!pathValue || !pathType) {
     return undefined;
   }
   core.info('Uploading wordlist...');
-  const wordlistPath = await downloadFile('wordlist.txt', keywords, pathType);
+  const wordlistPath = await downloadFile('wordlist.txt', pathValue, pathType);
   const resp = await execCmd(
     `corellium image create --project ${process.env.PROJECT} --instance ${instanceId} --format json wordlist.txt mast-wordlist plain ${wordlistPath}`,
   );
@@ -314,9 +294,9 @@ async function uploadWordlistFile(instanceId: string, pathType: PathType): Promi
   return wordlistId;
 }
 
-async function downloadInputFile(pathType: PathType): Promise<InputInfo> {
-  const inputsFilePath = await downloadFile('inputs.json', core.getInput('userActions'), pathType);
-  const inputsJson = JSON.parse(fs.readFileSync(inputsFilePath, 'utf-8'));
+async function downloadInputFile(pathValue: string, pathType: PathType): Promise<InputInfo> {
+  const inputsFilePath = await downloadFile('inputs.json', pathValue, pathType);
+  const inputsJson = JSON.parse(readFileSync(inputsFilePath, 'utf-8'));
   const inputsTimeout = inputsJson.reduce((acc: number, curr: { wait?: number; duration?: number }) => {
     if (curr.wait) {
       acc += curr.wait;
@@ -335,7 +315,9 @@ export async function pollAssessmentForStatus(
   expectedStatus: string,
 ): Promise<string> {
   const getAssessmentStatus = async (): Promise<string> => {
-    const resp = await execCmd(`corellium matrix get-assessment --instance ${instanceId} --assessment ${assessmentId}`);
+    const resp = await execCmd(
+      `corellium matrix get-assessment --instance ${instanceId} --assessment ${assessmentId}`,
+    );
     const parsedStatus = tryJsonParse<{ status: string }>(resp);
     if (!parsedStatus || !parsedStatus.status) {
       throw new Error('Status is missing from the response');
@@ -360,7 +342,7 @@ async function storeReportInArtifacts(report: string, bundleId: string): Promise
   const reportFileName = `report.${reportFormat}`;
   const reportPath = path.join(workspaceDir, reportFileName);
   const dateTime = Date.now();
-  fs.writeFileSync(reportPath, report);
+  writeFileSync(reportPath, report);
   const flavor = core.getInput('deviceFlavor');
   const artifact = new DefaultArtifactClient();
   const { id } = await artifact.uploadArtifact(
@@ -383,6 +365,10 @@ function validateInputsAndEnv(): void {
     throw new Error('Environment secret missing: PROJECT');
   }
   const requiredInputs = ['appPath', 'userActions'];
+  const existingInstance = core.getInput('existingInstance');
+  if (!existingInstance) {
+    requiredInputs.push('deviceFlavor', 'deviceOS');
+  }
   requiredInputs.forEach(input => {
     const inputResp = core.getInput(input);
     if (!inputResp || typeof inputResp !== 'string' || inputResp === '') {
@@ -398,12 +384,39 @@ async function downloadFile(fileNameToSave: string, pathValue: string, pathType:
     await exec(`curl -L -o ${downloadPath} ${pathValue}`, [], { silent: true });
     return downloadPath;
   } else {
-    return `${workspaceDir}${pathValue.startsWith('/') ? pathValue : `/${pathValue}`}`;
+    const fullPath = path.resolve(workspaceDir, pathValue);
+    return fullPath;
   }
 }
 
 async function wait(ms = 3000): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export async function getFilePathTypes(): Promise<FilePathTypes> {
+  const pathInputs = ['appPath', 'userActions', 'keywords'];
+  const workspaceDir = process.env.GITHUB_WORKSPACE as string;
+  const pathInputsWithTypes: FilePathTypes = {};
+
+  for (const pathInput of pathInputs) {
+    const filePath = core.getInput(pathInput);
+    if (filePath) {
+      try {
+        new URL(filePath);
+        pathInputsWithTypes[pathInput] = PathType.URL;
+        continue;
+      } catch (_) {
+        const fullPath = path.resolve(workspaceDir, filePath);
+        if (await promises.stat(fullPath).catch(() => false)) {
+          pathInputsWithTypes[pathInput] = PathType.RELATIVE;
+          continue;
+        }
+        throw new Error(`Provided file path is invalid: ${pathInput}`);
+      }
+    }
+  }
+
+  return pathInputsWithTypes;
 }
 
 async function execCmd(cmd: string): Promise<string> {
@@ -422,7 +435,7 @@ async function execCmd(cmd: string): Promise<string> {
     },
   });
   if (err) {
-    throw new Error(`Error occurred executing ${cmd} err=${err}`);
+    throw new Error(`Error occurred executing ${cmd}: ${err}`);
   }
   return resp;
 }
