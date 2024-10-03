@@ -212,7 +212,7 @@ async function runMatrix(
     uploadWordlistFile(instanceId, core.getInput('keywords'), pathTypes.keywords),
     downloadInputFile(core.getInput('userActions'), pathTypes.userActions),
   ]);
-  
+
   const inputsFilePath = inputInfo.inputsFilePath;
   const inputsTimeout = inputInfo.inputsTimeout;
 
@@ -315,9 +315,7 @@ export async function pollAssessmentForStatus(
   expectedStatus: string,
 ): Promise<string> {
   const getAssessmentStatus = async (): Promise<string> => {
-    const resp = await execCmd(
-      `corellium matrix get-assessment --instance ${instanceId} --assessment ${assessmentId}`,
-    );
+    const resp = await execCmd(`corellium matrix get-assessment --instance ${instanceId} --assessment ${assessmentId}`);
     const parsedStatus = tryJsonParse<{ status: string }>(resp);
     if (!parsedStatus || !parsedStatus.status) {
       throw new Error('Status is missing from the response');

@@ -101,7 +101,7 @@ describe('action', () => {
       getInputMock = jest.spyOn(core, 'getInput');
       process.env.GITHUB_WORKSPACE = path.join(__dirname, '.'); // Add this line
     });
-  
+
     afterEach(async () => {
       jest.clearAllMocks();
     });
@@ -113,9 +113,9 @@ describe('action', () => {
         return '';
       });
       (promises.stat as jest.Mock).mockRejectedValue(new Error('File not found'));
-    
+
       await expect(main.getFilePathTypes()).rejects.toThrow('Provided file path is invalid: appPath');
-    });    
+    });
 
     it('should add initial forward slash if missing', async () => {
       getInputMock.mockImplementation(() => 'test/filePath').mockImplementationOnce(() => mockUrl);
@@ -130,17 +130,17 @@ describe('action', () => {
       getInputMock
         .mockImplementationOnce(() => mockUrl) // For 'appPath'
         .mockImplementation(() => 'test/filePath'); // For 'userActions' and 'keywords'
-    
-        const mockStats = {
-          isFile: () => true,
-          isDirectory: () => false,
-        };
-        
-      (promises.stat as jest.Mock).mockResolvedValue(mockStats);        
-    
+
+      const mockStats = {
+        isFile: () => true,
+        isDirectory: () => false,
+      };
+
+      (promises.stat as jest.Mock).mockResolvedValue(mockStats);
+
       const resp = await main.getFilePathTypes();
       expect(resp).toEqual({ appPath: 'url', userActions: 'relative', keywords: 'relative' });
-    });    
+    });
 
     it('should return dict of file path types', async () => {
       getInputMock.mockImplementation(() => '/test/filePath').mockImplementationOnce(() => mockUrl);
@@ -219,11 +219,11 @@ describe('action', () => {
         if (name === 'existingInstance') return ''; // Ensure existingInstance is not set
         return 'mockVal';
       });
-    
+
       await main.run();
       expect(setFailedMock).toHaveBeenCalledWith('Input required and not supplied: deviceFlavor');
       expect(errorMock).not.toHaveBeenCalled();
-    });    
+    });
 
     it(`should throw an error if 'deviceOS' input is missing`, async () => {
       getInputMock.mockImplementation(name => {
@@ -231,11 +231,11 @@ describe('action', () => {
         if (name === 'existingInstance') return ''; // Ensure existingInstance is not set
         return 'mockVal';
       });
-    
+
       await main.run();
       expect(setFailedMock).toHaveBeenCalledWith('Input required and not supplied: deviceOS');
       expect(errorMock).not.toHaveBeenCalled();
-    });    
+    });
 
     it(`should throw an error if 'appPath' input is missing`, async () => {
       getInputMock.mockImplementation(name => (name === 'appPath' ? '' : 'mockVal'));
