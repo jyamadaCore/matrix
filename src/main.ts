@@ -4,28 +4,46 @@ import { readFileSync, writeFileSync, promises } from 'fs';
 import * as path from 'path';
 import { DefaultArtifactClient } from '@actions/artifact';
 
+/**
+ * Enumeration for path types.
+ */
 enum PathType {
   URL = 'url',
   RELATIVE = 'relative',
 }
 
+/**
+ * Type definition for file path types.
+ */
 type FilePathTypes = Record<string, PathType>;
 
+/**
+ * Interface representing instance details.
+ */
 interface InstanceDetails {
   state: string;
   ready: boolean;
 }
 
+/**
+ * Interface representing the setup result.
+ */
 interface SetupResult {
   instanceId: string;
   bundleId: string;
 }
 
+/**
+ * Interface representing input information.
+ */
 interface InputInfo {
   inputsFilePath: string;
   inputsTimeout: number;
 }
 
+/**
+ * Main function to execute the action.
+ */
 export async function run(): Promise<void> {
   try {
     validateInputsAndEnv();
@@ -58,6 +76,9 @@ export async function run(): Promise<void> {
   }
 }
 
+/**
+ * Installs the Corellium CLI and logs in.
+ */
 async function installCorelliumCli(): Promise<void> {
   core.info('Installing Corellium-CLI...');
   try {
@@ -75,6 +96,10 @@ async function installCorelliumCli(): Promise<void> {
   }
 }
 
+/**
+ * Checks the status of the instance and ensures it is ready.
+ * @param instanceId - The ID of the instance to check.
+ */
 async function instanceCheck(instanceId: string): Promise<void> {
   core.info(`Checking status of instance with ID: ${instanceId}...`);
   const instanceDetails = await getInstanceStatus(instanceId);
@@ -89,6 +114,11 @@ async function instanceCheck(instanceId: string): Promise<void> {
   await waitForInstanceReady(instanceId);
 }
 
+/**
+ * Retrieves the status of the specified instance.
+ * @param instanceId - The ID of the instance.
+ * @returns The instance details.
+ */
 async function getInstanceStatus(instanceId: string): Promise<InstanceDetails> {
   try {
     core.info(`Fetching status for instance ID: ${instanceId}...`);
@@ -100,6 +130,10 @@ async function getInstanceStatus(instanceId: string): Promise<InstanceDetails> {
   }
 }
 
+/**
+ * Waits for the instance to be ready by polling its status.
+ * @param instanceId - The ID of the instance.
+ */
 async function waitForInstanceReady(instanceId: string): Promise<void> {
   const pollInterval = 30000; // 30 seconds
   const maxRetries = 60;
@@ -130,6 +164,13 @@ async function waitForInstanceReady(instanceId: string): Promise<void> {
   throw new Error('Timed out waiting for instance to be ready.');
 }
 
+/**
+ * Sets up the device by creating or using an existing instance, installing the app, and opening it.
+ * @param pathTypes - The types of the file paths.
+ * @param deviceId - The ID of the existing device (if any).
+ * @param existingBundleId - The bundle ID of the existing app (if any).
+ * @returns The setup result containing instance and bundle IDs.
+ */
 async function setupDevice(
   pathTypes: FilePathTypes,
   deviceId?: string,
@@ -138,8 +179,6 @@ async function setupDevice(
   const projectId = process.env.PROJECT as string;
   let instanceId: string;
   let bundleId: string;
-
-  // Removed 'corellium login' from here
 
   if (deviceId) {
     // Use existing instance
@@ -182,6 +221,15 @@ async function setupDevice(
   return { instanceId, bundleId };
 }
 
+/**
+ * Runs the MATRIX assessment on the specified instance.
+ * @param projectId - The project ID.
+ * @param instanceId - The instance ID.
+ * @param bundleId - The bundle ID of the app.
+ * @param reportFormat - The desired report format.
+ * @param pathTypes - The types of the file paths.
+ * @returns The assessment report.
+ */
 async function runMatrix(
   projectId: string,
   instanceId: string,
@@ -239,6 +287,10 @@ async function runMatrix(
   );
 }
 
+/**
+ * Cleans up by stopping and deleting the instance.
+ * @param instanceId - The ID of the instance to clean up.
+ */
 async function cleanup(instanceId: string): Promise<void> {
   core.info('Cleaning up...');
   await execCmd(`corellium instance stop ${instanceId}`);
@@ -246,6 +298,11 @@ async function cleanup(instanceId: string): Promise<void> {
   await execCmd(`corellium logout`);
 }
 
+/**
+ * Retrieves the bundle ID of the installed app on the instance.
+ * @param instanceId - The ID of the instance.
+ * @returns The bundle ID.
+ */
 async function getBundleId(instanceId: string): Promise<string> {
   const resp = await execCmd(`corellium apps --project ${process.env.PROJECT} --instance ${instanceId}`);
   const appList = tryJsonParse<{ applicationType: string; bundleID: string }[]>(resp);
@@ -256,6 +313,13 @@ async function getBundleId(instanceId: string): Promise<string> {
   return bundleId;
 }
 
+/**
+ * Uploads a wordlist file to the instance if provided.
+ * @param instanceId - The ID of the instance.
+ * @param pathValue - The path or URL to the wordlist file.
+ * @param pathType - The type of the path (URL or relative).
+ * @returns The ID of the uploaded wordlist image.
+ */
 async function uploadWordlistFile(
   instanceId: string,
   pathValue?: string,
@@ -275,7 +339,12 @@ async function uploadWordlistFile(
   return wordlistId;
 }
 
-// estimating time it takes to execute device inputs - has 10s buffer
+/**
+ * Downloads the input file and calculates the total timeout needed for inputs to execute.
+ * @param pathValue - The path or URL to the inputs file.
+ * @param pathType - The type of the path (URL or relative).
+ * @returns An object containing the inputs file path and timeout.
+ */
 async function downloadInputFile(pathValue: string, pathType: PathType): Promise<InputInfo> {
   const inputsFilePath = await downloadFile('inputs.json', pathValue, pathType);
   const inputsJson = JSON.parse(readFileSync(inputsFilePath, 'utf-8'));
@@ -291,6 +360,13 @@ async function downloadInputFile(pathValue: string, pathType: PathType): Promise
   return { inputsFilePath, inputsTimeout };
 }
 
+/**
+ * Polls the assessment until it reaches the expected status.
+ * @param assessmentId - The ID of the assessment.
+ * @param instanceId - The ID of the instance.
+ * @param expectedStatus - The expected status to wait for.
+ * @returns The final status of the assessment.
+ */
 export async function pollAssessmentForStatus(
   assessmentId: string,
   instanceId: string,
@@ -316,6 +392,11 @@ export async function pollAssessmentForStatus(
   return actualStatus;
 }
 
+/**
+ * Stores the MATRIX report as an artifact.
+ * @param report - The report content.
+ * @param bundleId - The bundle ID of the app.
+ */
 async function storeReportInArtifacts(report: string, bundleId: string): Promise<void> {
   const workspaceDir = process.env.GITHUB_WORKSPACE as string;
   const reportFormat = core.getInput('reportFormat') || 'json';
@@ -337,6 +418,9 @@ async function storeReportInArtifacts(report: string, bundleId: string): Promise
   core.setOutput('report', downloadPath);
 }
 
+/**
+ * Validates the required inputs and environment variables.
+ */
 function validateInputsAndEnv(): void {
   if (!process.env.API_TOKEN) {
     throw new Error('Environment secret missing: API_TOKEN');
@@ -345,7 +429,7 @@ function validateInputsAndEnv(): void {
     throw new Error('Environment secret missing: PROJECT');
   }
 
-  // inputs from action file are not validated https://github.com/actions/runner/issues/1070
+  // Inputs from action file are not validated https://github.com/actions/runner/issues/1070
   const requiredInputs = ['appPath', 'userActions'];
   const deviceId = core.getInput('deviceId');
   if (!deviceId) {
@@ -359,6 +443,13 @@ function validateInputsAndEnv(): void {
   });
 }
 
+/**
+ * Downloads a file from a URL or returns the local path if relative.
+ * @param fileNameToSave - The name to save the file as.
+ * @param pathValue - The path or URL to the file.
+ * @param pathType - The type of the path (URL or relative).
+ * @returns The path to the downloaded or local file.
+ */
 async function downloadFile(fileNameToSave: string, pathValue: string, pathType: PathType): Promise<string> {
   const workspaceDir = process.env.GITHUB_WORKSPACE as string;
   const downloadPath = path.join(workspaceDir, fileNameToSave);
@@ -371,11 +462,18 @@ async function downloadFile(fileNameToSave: string, pathValue: string, pathType:
   }
 }
 
+/**
+ * Waits for the specified amount of milliseconds.
+ * @param ms - The number of milliseconds to wait.
+ */
 async function wait(ms = 3000): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// these can be either URLs or file relative to the github workspace
+/**
+ * Determines the types of the provided file paths (URL or relative).
+ * @returns An object mapping input names to their path types.
+ */
 export async function getFilePathTypes(): Promise<FilePathTypes> {
   const pathInputs = ['appPath', 'userActions', 'keywords'];
   const workspaceDir = process.env.GITHUB_WORKSPACE as string;
@@ -402,6 +500,11 @@ export async function getFilePathTypes(): Promise<FilePathTypes> {
   return pathInputsWithTypes;
 }
 
+/**
+ * Executes a command and returns the stdout output.
+ * @param cmd - The command to execute.
+ * @returns The standard output from the command.
+ */
 async function execCmd(cmd: string): Promise<string> {
   let err = '';
   let resp = '';
@@ -423,6 +526,11 @@ async function execCmd(cmd: string): Promise<string> {
   return resp;
 }
 
+/**
+ * Tries to parse a JSON string and returns the result.
+ * @param jsonStr - The JSON string to parse.
+ * @returns The parsed JSON object or undefined if parsing fails.
+ */
 function tryJsonParse<T>(jsonStr: string): T | undefined {
   try {
     return JSON.parse(jsonStr) as T;
