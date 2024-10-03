@@ -219,23 +219,23 @@ describe('action', () => {
         if (name === 'deviceId') return ''; // Ensure deviceId is not set
         return 'mockVal';
       });
-    
+
       await main.run();
       expect(setFailedMock).toHaveBeenCalledWith('Input required and not supplied: deviceFlavor');
       expect(errorMock).not.toHaveBeenCalled();
     });
-    
+
     it(`should throw an error if 'deviceOS' input is missing`, async () => {
       getInputMock.mockImplementation(name => {
         if (name === 'deviceOS') return '';
         if (name === 'deviceId') return ''; // Ensure deviceId is not set
         return 'mockVal';
       });
-    
+
       await main.run();
       expect(setFailedMock).toHaveBeenCalledWith('Input required and not supplied: deviceOS');
       expect(errorMock).not.toHaveBeenCalled();
-    });    
+    });
 
     it(`should throw an error if 'appPath' input is missing`, async () => {
       getInputMock.mockImplementation(name => (name === 'appPath' ? '' : 'mockVal'));
