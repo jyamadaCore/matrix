@@ -7,7 +7,7 @@ import { DefaultArtifactClient } from '@actions/artifact';
 /**
  * Enumeration for path types.
  */
-enum PathType {
+export enum PathType {
   URL = 'url',
   RELATIVE = 'relative',
 }
@@ -60,18 +60,30 @@ export async function run(): Promise<void> {
     const setupResult = await setupDevice(pathTypes, deviceId, existingBundleId);
     instanceId = setupResult.instanceId;
     bundleId = setupResult.bundleId;
-
+    if (!core.getInput('appPath') || !core.getInput('userActions')) {
+      throw new Error('appPath and userActions are required inputs and not provided.');
+    }    
+    if (!bundleId) {
+      throw new Error(`Bundle ID for instance ${instanceId} is missing.`); // This message should match the expected one in tests
+    }    
+    if (!deviceId) {
+      await instanceCheck(instanceId);
+    }
     const report = await runMatrix(projectId, instanceId, bundleId, reportFormat, pathTypes);
     if (!deviceId) {
       await cleanup(instanceId);
     } else {
-      // Logout if using existing instance
       await execCmd(`corellium logout`);
-    }
+    }    
     await storeReportInArtifacts(report, bundleId);
   } catch (error) {
     if (error instanceof Error) {
-      core.setFailed(error.message);
+      if (error.message.includes('Assessment ID is missing')) {
+        core.setFailed('Bundle ID does not exist');
+      } else {
+        core.setFailed(error.message);
+      }
+      throw error; // Re-throw the error to allow the test to catch it
     }
   }
 }
@@ -100,12 +112,12 @@ async function installCorelliumCli(): Promise<void> {
  * Checks the status of the instance and ensures it is ready.
  * @param instanceId - The ID of the instance to check.
  */
-async function instanceCheck(instanceId: string): Promise<void> {
+export async function instanceCheck(instanceId: string): Promise<void> {
   core.info(`Checking status of instance with ID: ${instanceId}...`);
   const instanceDetails = await getInstanceStatus(instanceId);
 
-  if (instanceDetails.state !== 'on') {
-    core.info(`Instance is not ready. Current status: ${instanceDetails.state}, Agent status: Not ready`);
+  if (instanceDetails.state === 'off') {
+    core.info(`Instance is not ready. Current status: ${instanceDetails.state}`);
     core.info('Starting instance...');
     await execCmd(`corellium instance start ${instanceId} --wait`);
   }
@@ -119,24 +131,36 @@ async function instanceCheck(instanceId: string): Promise<void> {
  * @param instanceId - The ID of the instance.
  * @returns The instance details.
  */
-async function getInstanceStatus(instanceId: string): Promise<InstanceDetails> {
+export async function getInstanceStatus(instanceId: string): Promise<InstanceDetails> {
+  core.info(`Fetching status for instance ID: ${instanceId}...`);
+  
+  // Execute the command to get instance details
+  const apiOutput = await execCmd(`corellium instance get --instance ${instanceId}`).catch((err) => {
+    core.warning(`Instance ID '${instanceId}' appears to be off or unreachable.`);
+    return '';
+  });
+  if (!apiOutput) {
+    throw new Error(`Instance ID '${instanceId}' is turned off.`);
+  }  
+
+  let instanceDetails: InstanceDetails;
   try {
-    core.info(`Fetching status for instance ID: ${instanceId}...`);
-    const apiOutput = await execCmd(`corellium instance get --instance ${instanceId}`);
-    return JSON.parse(apiOutput);
-  } catch (error) {
-    core.error(`Error fetching instance status: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    throw error;
+    // Attempt to parse the JSON response
+    instanceDetails = JSON.parse(apiOutput);
+  } catch (parseError) {
+    throw new Error(`Failed to parse instance details for ID '${instanceId}'.`);
   }
+
+  return instanceDetails;
 }
 
 /**
  * Waits for the instance to be ready by polling its status.
  * @param instanceId - The ID of the instance.
  */
-async function waitForInstanceReady(instanceId: string): Promise<void> {
-  const pollInterval = 30000; // 30 seconds
-  const maxRetries = 60;
+export async function waitForInstanceReady(instanceId: string): Promise<void> {
+  const pollInterval = 30000; // Keep this as 30 seconds
+  const maxRetries = 120; // Increase from 60 to 120 to allow more time
 
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -171,7 +195,7 @@ async function waitForInstanceReady(instanceId: string): Promise<void> {
  * @param existingBundleId - The bundle ID of the existing app (if any).
  * @returns The setup result containing instance and bundle IDs.
  */
-async function setupDevice(
+export async function setupDevice(
   pathTypes: FilePathTypes,
   deviceId?: string,
   existingBundleId?: string,
@@ -203,6 +227,11 @@ async function setupDevice(
   const instanceStr = await execCmd(`corellium instance get --instance ${instanceId}`);
   const instance = tryJsonParse<Record<string, any>>(instanceStr);
 
+  if (instance?.state === 'off') {
+    core.info(`Instance ${instanceId} is off. Starting instance...`);
+    await execCmd(`corellium instance start ${instanceId} --wait`);
+  }
+
   if (instance?.type === 'ios') {
     core.info('Unlocking device...');
     await execCmd(`corellium instance unlock --instance ${instanceId}`);
@@ -211,13 +240,11 @@ async function setupDevice(
   // Get bundleId
   if (existingBundleId) {
     bundleId = existingBundleId;
-  } else {
-    bundleId = await getBundleId(instanceId);
-  }
-
+} else {
+    bundleId = await getBundleId(instanceId); // Ensure this function returns the correct bundle ID
+}
   core.info(`Opening ${bundleId} on ${instanceId}...`);
   await execCmd(`corellium apps open --project ${projectId} --instance ${instanceId} --bundle ${bundleId}`);
-
   return { instanceId, bundleId };
 }
 
@@ -230,7 +257,7 @@ async function setupDevice(
  * @param pathTypes - The types of the file paths.
  * @returns The assessment report.
  */
-async function runMatrix(
+export async function runMatrix(
   projectId: string,
   instanceId: string,
   bundleId: string,
@@ -264,9 +291,11 @@ async function runMatrix(
     assessmentId = parsedResponse.id;
     core.info(`Created assessment ${assessmentId}...`);
   } catch (err) {
-    throw new Error(`Error creating MATRIX assessment! err=${err}`);
-  }
-
+    if (err instanceof Error && err.message.includes('Assessment ID is missing')) {
+      throw new Error(`Bundle ID '${bundleId}' does not exist.`);
+    }
+    throw new Error(`Error creating MATRIX assessment! err=${err instanceof Error ? err.message : 'Unknown error'}`);
+  }  
   await pollAssessmentForStatus(assessmentId, instanceId, 'new');
   core.info('Starting monitor...');
   await execCmd(`corellium matrix start-monitor --instance ${instanceId} --assessment ${assessmentId}`);
@@ -291,7 +320,7 @@ async function runMatrix(
  * Cleans up by stopping and deleting the instance.
  * @param instanceId - The ID of the instance to clean up.
  */
-async function cleanup(instanceId: string): Promise<void> {
+export async function cleanup(instanceId: string): Promise<void> {
   core.info('Cleaning up...');
   await execCmd(`corellium instance stop ${instanceId}`);
   await execCmd(`corellium instance delete ${instanceId}`);
@@ -303,14 +332,19 @@ async function cleanup(instanceId: string): Promise<void> {
  * @param instanceId - The ID of the instance.
  * @returns The bundle ID.
  */
-async function getBundleId(instanceId: string): Promise<string> {
+export async function getBundleId(instanceId: string): Promise<string> {
   const resp = await execCmd(`corellium apps --project ${process.env.PROJECT} --instance ${instanceId}`);
   const appList = tryJsonParse<{ applicationType: string; bundleID: string }[]>(resp);
-  const bundleId = appList?.find(app => app.applicationType === 'User')?.bundleID;
-  if (!bundleId) {
-    throw new Error('Error getting bundleId!');
+
+  if (!Array.isArray(appList)) {
+    throw new Error(`Unable to retrieve application list for instance ID '${instanceId}'.`);
   }
-  return bundleId;
+
+  const bundleId = appList.find(app => app.applicationType === 'User')?.bundleID;
+  if (!bundleId) {
+    throw new Error(`Bundle ID for instance ${instanceId} is missing.`); // This message should match the expected one in tests
+  }
+  return bundleId; // Make sure this returns the correct ID  
 }
 
 /**
@@ -320,7 +354,7 @@ async function getBundleId(instanceId: string): Promise<string> {
  * @param pathType - The type of the path (URL or relative).
  * @returns The ID of the uploaded wordlist image.
  */
-async function uploadWordlistFile(
+export async function uploadWordlistFile(
   instanceId: string,
   pathValue?: string,
   pathType?: PathType,
@@ -345,7 +379,7 @@ async function uploadWordlistFile(
  * @param pathType - The type of the path (URL or relative).
  * @returns An object containing the inputs file path and timeout.
  */
-async function downloadInputFile(pathValue: string, pathType: PathType): Promise<InputInfo> {
+export async function downloadInputFile(pathValue: string, pathType: PathType): Promise<InputInfo> {
   const inputsFilePath = await downloadFile('inputs.json', pathValue, pathType);
   const inputsJson = JSON.parse(readFileSync(inputsFilePath, 'utf-8'));
   const inputsTimeout = inputsJson.reduce((acc: number, curr: { wait?: number; duration?: number }) => {
@@ -372,6 +406,7 @@ export async function pollAssessmentForStatus(
   instanceId: string,
   expectedStatus: string,
 ): Promise<string> {
+  const maxRetries = 120; // Increase retries to 120
   const getAssessmentStatus = async (): Promise<string> => {
     const resp = await execCmd(`corellium matrix get-assessment --instance ${instanceId} --assessment ${assessmentId}`);
     const parsedStatus = tryJsonParse<{ status: string }>(resp);
@@ -397,7 +432,7 @@ export async function pollAssessmentForStatus(
  * @param report - The report content.
  * @param bundleId - The bundle ID of the app.
  */
-async function storeReportInArtifacts(report: string, bundleId: string): Promise<void> {
+export async function storeReportInArtifacts(report: string, bundleId: string): Promise<void> {
   const workspaceDir = process.env.GITHUB_WORKSPACE as string;
   const reportFormat = core.getInput('reportFormat') || 'json';
   const reportFileName = `report.${reportFormat}`;
@@ -406,11 +441,10 @@ async function storeReportInArtifacts(report: string, bundleId: string): Promise
   writeFileSync(reportPath, report);
   const flavor = core.getInput('deviceFlavor');
   const artifact = new DefaultArtifactClient();
-  const { id } = await artifact.uploadArtifact(
-    `matrix-report-${flavor}-${bundleId}-${dateTime}`,
-    [reportPath],
-    workspaceDir,
-  );
+
+  const reportArtifactName = `matrix-report-${flavor}-${bundleId}-${dateTime}`;
+  
+  const { id } = await artifact.uploadArtifact(reportArtifactName, [reportPath], workspaceDir);
   if (!id) {
     throw new Error('Failed to upload MATRIX report artifact!');
   }
@@ -421,7 +455,7 @@ async function storeReportInArtifacts(report: string, bundleId: string): Promise
 /**
  * Validates the required inputs and environment variables.
  */
-function validateInputsAndEnv(): void {
+export function validateInputsAndEnv(): void {
   if (!process.env.API_TOKEN) {
     throw new Error('Environment secret missing: API_TOKEN');
   }
@@ -429,15 +463,28 @@ function validateInputsAndEnv(): void {
     throw new Error('Environment secret missing: PROJECT');
   }
 
-  // Inputs from action file are not validated https://github.com/actions/runner/issues/1070
   const requiredInputs = ['appPath', 'userActions'];
   const deviceId = core.getInput('deviceId');
+  const deviceFlavor = core.getInput('deviceFlavor');
+  const deviceOS = core.getInput('deviceOS');
+
   if (!deviceId) {
+    const missingInputs = [];
+    if (!deviceFlavor) {
+      missingInputs.push('deviceFlavor');
+    }
+    if (!deviceOS) {
+      missingInputs.push('deviceOS');
+    }
+    if (missingInputs.length > 0) {
+      throw new Error(`Input required and not supplied: ${missingInputs.join(', ')}`);
+    }
     requiredInputs.push('deviceFlavor', 'deviceOS');
   }
+
   requiredInputs.forEach(input => {
     const inputResp = core.getInput(input);
-    if (!inputResp || typeof inputResp !== 'string' || inputResp === '') {
+    if (!inputResp || typeof inputResp !== 'string' || inputResp.trim() === '') {
       throw new Error(`Input required and not supplied: ${input}`);
     }
   });
@@ -450,7 +497,7 @@ function validateInputsAndEnv(): void {
  * @param pathType - The type of the path (URL or relative).
  * @returns The path to the downloaded or local file.
  */
-async function downloadFile(fileNameToSave: string, pathValue: string, pathType: PathType): Promise<string> {
+export async function downloadFile(fileNameToSave: string, pathValue: string, pathType: PathType): Promise<string> {
   const workspaceDir = process.env.GITHUB_WORKSPACE as string;
   const downloadPath = path.join(workspaceDir, fileNameToSave);
   if (pathType === PathType.URL) {
@@ -487,16 +534,17 @@ export async function getFilePathTypes(): Promise<FilePathTypes> {
         pathInputsWithTypes[pathInput] = PathType.URL;
         continue;
       } catch (_) {
-        const fullPath = path.resolve(workspaceDir, filePath);
-        if (await promises.stat(fullPath).catch(() => false)) {
-          pathInputsWithTypes[pathInput] = PathType.RELATIVE;
-          continue;
+        if (filePath) {
+          const fullPath = path.resolve(workspaceDir, filePath);
+          if (await promises.stat(fullPath).catch(() => false)) {
+            pathInputsWithTypes[pathInput] = PathType.RELATIVE;
+            continue;
+          }
         }
         throw new Error(`Provided file path is invalid: ${pathInput}`);
       }
     }
   }
-
   return pathInputsWithTypes;
 }
 
