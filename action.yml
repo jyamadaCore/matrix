@@ -34,6 +34,7 @@ inputs:
   reportFormat:
     description: 'This controls the format of the report output, it will default to JSON'
     required: false
+    default: 'json'
 
 outputs:
   report:
