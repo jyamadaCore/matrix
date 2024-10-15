@@ -20,19 +20,19 @@ export async function run(): Promise<void> {
     const pathTypes = await getFilePathTypes();
     await installCorelliumCli();
     
-    const instanceId = core.getInput('instanceId');
+    const deviceId = core.getInput('deviceId');
     const reportFormat = core.getInput('reportFormat') || 'html';
     let finalInstanceId: string;
     let bundleId: string;
     let isNewInstance = false;
 
-    core.info(`Received instanceId: ${instanceId}`);
+    core.info(`Received deviceId: ${deviceId}`);
     core.info(`Received reportFormat: ${reportFormat}`);
 
-    if (instanceId && instanceId.trim() !== '') {
-      finalInstanceId = instanceId.trim();
+    if (deviceId && deviceId.trim() !== '') {
+      finalInstanceId = deviceId.trim();
     } else {
-      ({ instanceId: finalInstanceId } = await setupDevice());
+      ({ deviceId: finalInstanceId } = await setupDevice());
       isNewInstance = true;
     }
 
@@ -59,44 +59,44 @@ async function installCorelliumCli(): Promise<void> {
   await execCmd(`corellium login --endpoint ${core.getInput('server')} --apitoken ${process.env.API_TOKEN}`);
 }
 
-async function setupDevice(): Promise<{ instanceId: string }> {
+async function setupDevice(): Promise<{ deviceId: string }> {
   const projectId = process.env.PROJECT;
 
   core.info('Creating device...');
   const resp = await execCmd(
     `corellium instance create ${core.getInput('deviceFlavor')} ${core.getInput('deviceOS')} ${projectId} --wait`,
   );
-  const instanceId = resp?.toString().trim();
-  return { instanceId };
+  const deviceId = resp?.toString().trim();
+  return { deviceId };
 }
 
-async function setupApp(instanceId: string, pathTypes: FilePathTypes): Promise<string> {
+async function setupApp(deviceId: string, pathTypes: FilePathTypes): Promise<string> {
   const projectId = process.env.PROJECT;
 
   core.info('Downloading app...');
   const appPath = await downloadFile('appFile', core.getInput('appPath'), pathTypes.appPath);
 
-  core.info(`Installing app on ${instanceId}...`);
-  await execCmd(`corellium apps install --project ${projectId} --instance ${instanceId} --app ${appPath}`);
+  core.info(`Installing app on ${deviceId}...`);
+  await execCmd(`corellium apps install --project ${projectId} --instance ${deviceId} --app ${appPath}`);
 
-  const instanceStr = await execCmd(`corellium instance get --instance ${instanceId}`);
+  const instanceStr = await execCmd(`corellium instance get --instance ${deviceId}`);
   const instance = tryJsonParse(instanceStr) as unknown as { type: string };
   if (instance?.type === 'ios') {
     core.info('Unlocking device...');
-    await execCmd(`corellium instance unlock --instance ${instanceId}`);
+    await execCmd(`corellium instance unlock --instance ${deviceId}`);
   }
 
-  const bundleId = await getBundleId(instanceId);
+  const bundleId = await getBundleId(deviceId);
 
-  core.info(`Opening ${bundleId} on ${instanceId}...`);
-  await execCmd(`corellium apps open --project ${projectId} --instance ${instanceId} --bundle ${bundleId}`);
+  core.info(`Opening ${bundleId} on ${deviceId}...`);
+  await execCmd(`corellium apps open --project ${projectId} --instance ${deviceId} --bundle ${bundleId}`);
 
   return bundleId;
 }
 
-async function runMatrix(instanceId: string, bundleId: string, pathTypes: FilePathTypes): Promise<string> {
+async function runMatrix(deviceId: string, bundleId: string, pathTypes: FilePathTypes): Promise<string> {
   const [wordlistId, inputInfo] = await Promise.all([
-    uploadWordlistFile(instanceId, pathTypes.keywords),
+    uploadWordlistFile(deviceId, pathTypes.keywords),
     downloadInputFile(pathTypes.userActions),
   ]);
   const inputsFilePath = inputInfo.inputsFilePath;
@@ -107,7 +107,7 @@ async function runMatrix(instanceId: string, bundleId: string, pathTypes: FilePa
   core.info('Creating assessment...');
   let assessmentId: string | undefined;
   try {
-    let createAssessment = `corellium matrix create-assessment --instance ${instanceId} --bundle ${bundleId}`;
+    let createAssessment = `corellium matrix create-assessment --instance ${deviceId} --bundle ${bundleId}`;
     if (wordlistId) {
       createAssessment += ` --wordlist ${wordlistId}`;
     }
@@ -118,37 +118,37 @@ async function runMatrix(instanceId: string, bundleId: string, pathTypes: FilePa
     throw new Error(`Error creating MATRIX assessment! err=${err}`);
   }
 
-  await pollAssessmentForStatus(assessmentId, instanceId, 'new');
+  await pollAssessmentForStatus(assessmentId, deviceId, 'new');
   core.info('Starting monitor...');
-  await execCmd(`corellium matrix start-monitor --instance ${instanceId} --assessment ${assessmentId}`);
+  await execCmd(`corellium matrix start-monitor --instance ${deviceId} --assessment ${assessmentId}`);
 
-  await pollAssessmentForStatus(assessmentId, instanceId, 'monitoring');
+  await pollAssessmentForStatus(assessmentId, deviceId, 'monitoring');
   core.info('Executing inputs on device...');
-  await execCmd(`corellium input ${instanceId} ${inputsFilePath}`);
+  await execCmd(`corellium input ${deviceId} ${inputsFilePath}`);
   core.info(`Waiting ${inputsTimeout}ms for inputs to execute...`);
   await wait(inputsTimeout);
 
   core.info('Stopping monitor...');
-  await execCmd(`corellium matrix stop-monitor --instance ${instanceId} --assessment ${assessmentId}`);
+  await execCmd(`corellium matrix stop-monitor --instance ${deviceId} --assessment ${assessmentId}`);
 
-  await pollAssessmentForStatus(assessmentId, instanceId, 'readyForTesting');
+  await pollAssessmentForStatus(assessmentId, deviceId, 'readyForTesting');
   core.info('Executing tests...');
-  await execCmd(`corellium matrix test --instance ${instanceId} --assessment ${assessmentId}`);
+  await execCmd(`corellium matrix test --instance ${deviceId} --assessment ${assessmentId}`);
 
-  await pollAssessmentForStatus(assessmentId, instanceId, 'complete');
+  await pollAssessmentForStatus(assessmentId, deviceId, 'complete');
   core.info('Downloading assessment...');
-  return await execCmd(`corellium matrix download-report --instance ${instanceId} --assessment ${assessmentId}`);
+  return await execCmd(`corellium matrix download-report --instance ${deviceId} --assessment ${assessmentId}`);
 }
 
-async function cleanup(instanceId: string): Promise<void> {
+async function cleanup(deviceId: string): Promise<void> {
   core.info('Cleaning up...');
-  await execCmd(`corellium instance stop ${instanceId}`);
-  await execCmd(`corellium instance delete ${instanceId}`);
+  await execCmd(`corellium instance stop ${deviceId}`);
+  await execCmd(`corellium instance delete ${deviceId}`);
   await execCmd(`corellium logout`);
 }
 
-async function getBundleId(instanceId: string): Promise<string> {
-  const resp = await execCmd(`corellium apps --project ${process.env.PROJECT} --instance ${instanceId}`);
+async function getBundleId(deviceId: string): Promise<string> {
+  const resp = await execCmd(`corellium apps --project ${process.env.PROJECT} --instance ${deviceId}`);
   const appList = tryJsonParse(resp) as unknown as { applicationType: string; bundleID: string }[];
   const bundleId = appList?.find(app => app.applicationType === 'User')?.bundleID;
   if (!bundleId) {
@@ -157,7 +157,7 @@ async function getBundleId(instanceId: string): Promise<string> {
   return bundleId;
 }
 
-async function uploadWordlistFile(instanceId: string, pathType: PathType): Promise<string | undefined> {
+async function uploadWordlistFile(deviceId: string, pathType: PathType): Promise<string | undefined> {
   const keywords = core.getInput('keywords');
   if (!keywords) {
     return;
@@ -166,7 +166,7 @@ async function uploadWordlistFile(instanceId: string, pathType: PathType): Promi
   core.info('Uploading wordlist...');
   const wordlistPath = await downloadFile('wordlist.txt', keywords, pathType);
   const resp = await execCmd(
-    `corellium image create --project ${process.env.PROJECT} --instance ${instanceId} --format json wordlist.txt mast-wordlist plain ${wordlistPath}`,
+    `corellium image create --project ${process.env.PROJECT} --instance ${deviceId} --format json wordlist.txt mast-wordlist plain ${wordlistPath}`,
   );
   const uploadedWordlistResp = tryJsonParse(resp) as unknown as { id: string }[];
   const wordlistId = uploadedWordlistResp?.[0].id;
@@ -194,11 +194,11 @@ async function downloadInputFile(pathType: PathType): Promise<{ inputsFilePath: 
 
 export async function pollAssessmentForStatus(
   assessmentId: string,
-  instanceId: string,
+  deviceId: string,
   expectedStatus: string,
 ): Promise<string> {
   const getAssessmentStatus = async (): Promise<string> => {
-    const resp = await execCmd(`corellium matrix get-assessment --instance ${instanceId} --assessment ${assessmentId}`);
+    const resp = await execCmd(`corellium matrix get-assessment --instance ${deviceId} --assessment ${assessmentId}`);
     return (tryJsonParse(resp) as { status: string })?.status;
   };
 
