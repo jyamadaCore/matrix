@@ -23,7 +23,6 @@ export async function run(): Promise<void> {
     const deviceId = core.getInput('deviceId');
     const reportFormat = core.getInput('reportFormat') || 'html';
     let finalInstanceId: string;
-    let bundleId: string;
     let isNewInstance = false;
 
     core.info(`Received deviceId: ${deviceId}`);
